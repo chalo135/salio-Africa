@@ -1,0 +1,6 @@
+<Solution>
+  <Project Path="Salio.Api/Salio.Api.csproj" />
+  <Project Path="Salio.Domain/Salio.Domain.csproj" />
+  <Project Path="Salio.Infrastructure/Salio.Infrastructure.csproj" />
+  <Project Path="Salio.Tests/Salio.Tests.csproj" />
+</Solution>
