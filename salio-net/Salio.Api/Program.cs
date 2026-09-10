@@ -1,47 +1,64 @@
 using Microsoft.EntityFrameworkCore;
+using Salio.Domain.Entities;
+using Salio.Domain.Services;
 using Salio.Infrastructure;
-
+using Scalar.AspNetCore;
 
 var builder = WebApplication.CreateBuilder(args);
+
 builder.Services.AddDbContext<SalioDbContext>(options =>
     options.UseNpgsql(builder.Configuration.GetConnectionString("Default")));
 
-// Add services to the container.
-// Learn more about configuring OpenAPI at https://aka.ms/aspnet/openapi
+builder.Services.AddScoped<LedgerService>();
+builder.Services.AddScoped<JournalPoster>();
+
+builder.Services.AddControllers();
 builder.Services.AddOpenApi();
 
 var app = builder.Build();
 
-// Configure the HTTP request pipeline.
 if (app.Environment.IsDevelopment())
 {
     app.MapOpenApi();
+    app.MapScalarApiReference();
+    await SetUpDevelopmentDatabaseAsync(app);
 }
 
 app.UseHttpsRedirection();
 
-var summaries = new[]
-{
-    "Freezing", "Bracing", "Chilly", "Cool", "Mild", "Warm", "Balmy", "Hot", "Sweltering", "Scorching"
-};
-
-app.MapGet("/weatherforecast", () =>
-{
-    var forecast =  Enumerable.Range(1, 5).Select(index =>
-        new WeatherForecast
-        (
-            DateOnly.FromDateTime(DateTime.Now.AddDays(index)),
-            Random.Shared.Next(-20, 55),
-            summaries[Random.Shared.Next(summaries.Length)]
-        ))
-        .ToArray();
-    return forecast;
-})
-.WithName("GetWeatherForecast");
+app.MapControllers();
 
 app.Run();
 
-record WeatherForecast(DateOnly Date, int TemperatureC, string? Summary)
+
+// Runs once at startup, in Development only.
+// Applies any pending migrations, then makes sure there is one organisation
+// with a chart of accounts to post against.
+static async Task SetUpDevelopmentDatabaseAsync(WebApplication app)
 {
-    public int TemperatureF => 32 + (int)(TemperatureC / 0.5556);
+    using var scope = app.Services.CreateScope();
+    var db = scope.ServiceProvider.GetRequiredService<SalioDbContext>();
+
+    await db.Database.MigrateAsync();
+
+    // A fixed id, so development data stays the same between runs.
+    var organizationId = new Guid("00000000-0000-0000-0000-000000000001");
+
+    bool organizationExists = await db.Organizations
+        .AnyAsync(o => o.Id == organizationId);
+
+    if (!organizationExists)
+    {
+        db.Organizations.Add(new Organization
+        {
+            Id = organizationId,
+            Name = "Salio Demo Shop",
+            Currency = "KES",
+            CreatedAt = DateTimeOffset.UtcNow
+        });
+
+        await db.SaveChangesAsync();
+    }
+
+    await ChartOfAccountsSeeder.SeedAsync(db, organizationId, CancellationToken.None);
 }

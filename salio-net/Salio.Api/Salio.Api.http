@@ -1,6 +1,5 @@
 @Salio.Api_HostAddress = http://localhost:5077
 
-GET {{Salio.Api_HostAddress}}/weatherforecast/
-Accept: application/json
+# No endpoints yet. Add requests here as controllers arrive.
 
 ###

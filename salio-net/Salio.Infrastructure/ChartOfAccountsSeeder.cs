@@ -25,6 +25,7 @@ namespace Salio.Infrastructure
                 NewAccount(organizationId, "1010", "M-Pesa", AccountClass.Asset),
                 NewAccount(organizationId, "1200", "Inventory", AccountClass.Asset),
                 NewAccount(organizationId, "2000", "Accounts Payable", AccountClass.Liability),
+                NewAccount(organizationId, "2100", "VAT Payable", AccountClass.Liability),
                 NewAccount(organizationId, "3000", "Owner's Equity", AccountClass.Equity),
                 NewAccount(organizationId, "4000", "Sales Revenue", AccountClass.Income),
                 NewAccount(organizationId, "4200", "Sales Discounts", AccountClass.Income),

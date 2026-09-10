@@ -61,7 +61,8 @@ to anything in Domain.
 2. **Every table has `OrganizationId` (Guid).** Every query filters on it.
    No exceptions, including lookup tables.
 
-3. **Only `LedgerService.PostJournal()` writes to `JournalLines`.**
+3. **Only `JournalPoster.PostAsync()` writes to `JournalEntries` and
+   `JournalLines`**, and it always calls `LedgerService.PostJournal()` first.
    No controller, no other service, no direct `DbContext` write. Ever.
 
 4. **`PostJournal` throws if debits ≠ credits.** This is checked in Domain,

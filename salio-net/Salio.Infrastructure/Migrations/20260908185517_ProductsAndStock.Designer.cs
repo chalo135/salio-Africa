@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 using Salio.Infrastructure;
@@ -11,9 +12,11 @@ using Salio.Infrastructure;
 namespace Salio.Infrastructure.Migrations
 {
     [DbContext(typeof(SalioDbContext))]
-    partial class SalioDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260908185517_ProductsAndStock")]
+    partial class ProductsAndStock
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
