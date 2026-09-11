@@ -1,7 +1,7 @@
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.ModelBinding;
 using Microsoft.EntityFrameworkCore;
-using Salio.Api.Contracts;
+using Salio.Api.Dtos;
 using Salio.Infrastructure;
 
 namespace Salio.Api.Controllers;

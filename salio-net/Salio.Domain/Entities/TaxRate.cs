@@ -1,3 +1,5 @@
+using Salio.Domain.Enums;
+
 namespace Salio.Domain.Entities
 {
     // Rates are data, never constants in code. Kenyan rates are disputed
@@ -7,7 +9,11 @@ namespace Salio.Domain.Entities
     {
         public Guid Id { get; set; }
         public Guid OrganizationId { get; set; }
-        public char Band { get; set; }
+        public TaxType TaxType { get; set; }
+
+        // The VAT band, 'A' to 'E'. Null for Turnover Tax, which has no bands.
+        public char? Band { get; set; }
+
         public decimal RatePercent { get; set; }
         public DateOnly EffectiveFrom { get; set; }
         public DateOnly? EffectiveTo { get; set; }

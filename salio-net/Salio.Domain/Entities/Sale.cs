@@ -12,6 +12,10 @@ namespace Salio.Domain.Entities
         public long TotalMinor { get; set; }
         public SaleStatus Status { get; set; }
 
+        // Which turn at the till this sale belongs to. Nullable because sales
+        // already in the database were recorded before shifts existed.
+        public Guid? ShiftId { get; set; }
+
         // eTIMS — nullable and unused until KRA integration is built.
         public string? EtimsControlNumber { get; set; }
         public string? EtimsSignature { get; set; }

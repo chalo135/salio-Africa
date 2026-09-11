@@ -1,6 +1,6 @@
 using Salio.Domain.Enums;
 
-namespace Salio.Api.Contracts;
+namespace Salio.Api.Dtos;
 
 public class JournalEntryResponse
 {

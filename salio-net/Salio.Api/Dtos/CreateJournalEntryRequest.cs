@@ -1,7 +1,7 @@
 using System.ComponentModel.DataAnnotations;
 using Salio.Domain.Enums;
 
-namespace Salio.Api.Contracts;
+namespace Salio.Api.Dtos;
 
 /// <summary>
 /// A journal entry as it arrives from the caller.

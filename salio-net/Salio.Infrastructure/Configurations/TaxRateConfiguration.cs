@@ -16,9 +16,8 @@ namespace Salio.Infrastructure.Configurations
 
             builder.Property(r => r.Source).IsRequired().HasMaxLength(200);
 
-            // Looking up "the rate for band A on this date" is the only query
-            // this table has.
-            builder.HasIndex(r => new { r.OrganizationId, r.Band, r.EffectiveFrom });
+            // Every lookup is "the rate of this type (and band) on this date".
+            builder.HasIndex(r => new { r.OrganizationId, r.TaxType, r.Band, r.EffectiveFrom });
         }
     }
 }

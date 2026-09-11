@@ -1,6 +1,6 @@
 using System.ComponentModel.DataAnnotations;
 
-namespace Salio.Api.Contracts;
+namespace Salio.Api.Dtos;
 
 /// <summary>
 /// One line of a journal entry, as it arrives from the caller.

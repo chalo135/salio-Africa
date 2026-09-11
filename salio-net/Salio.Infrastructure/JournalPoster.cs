@@ -1,3 +1,4 @@
+using Microsoft.EntityFrameworkCore;
 using Salio.Domain.Entities;
 using Salio.Domain.Services;
 
@@ -23,6 +24,21 @@ public class JournalPoster
         List<JournalLine> lines,
         CancellationToken cancellationToken)
     {
+        // A filed period is closed. Changing its books after the return went
+        // to KRA would make the filed figure wrong without anyone noticing.
+        bool periodFiled = await _db.FiledReturns
+            .AnyAsync(r => r.OrganizationId == entry.OrganizationId
+                && r.PeriodFrom <= entry.EntryDate
+                && r.PeriodTo >= entry.EntryDate, cancellationToken);
+
+        if (periodFiled)
+        {
+            throw new InvalidOperationException(
+                "The books for " + entry.EntryDate.ToString("yyyy-MM-dd")
+                + " are closed because a tax return has been filed for that period. "
+                + "Post the correction in a period that is still open.");
+        }
+
         // Throws if debits do not equal credits.
         // Also stamps every line with this entry's id.
         _ledger.PostJournal(entry, lines);

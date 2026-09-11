@@ -1,7 +1,7 @@
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.ModelBinding;
 using Microsoft.EntityFrameworkCore;
-using Salio.Api.Contracts;
+using Salio.Api.Dtos;
 using Salio.Domain.Entities;
 using Salio.Infrastructure;
 
@@ -9,12 +9,12 @@ namespace Salio.Api.Controllers;
 
 [ApiController]
 [Route("api/journal-entries")]
-public class JournalEntriesController : ControllerBase
+public class JournalController : ControllerBase
 {
     private readonly JournalPoster _journalPoster;
     private readonly SalioDbContext _db;
 
-    public JournalEntriesController(JournalPoster journalPoster, SalioDbContext db)
+    public JournalController(JournalPoster journalPoster, SalioDbContext db)
     {
         _journalPoster = journalPoster;
         _db = db;

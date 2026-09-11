@@ -19,6 +19,9 @@ public class SalioDbContext : DbContext
     public DbSet<Sale> Sales => Set<Sale>();
     public DbSet<SaleLine> SaleLines => Set<SaleLine>();
     public DbSet<TaxRate> TaxRates => Set<TaxRate>();
+    public DbSet<Payment> Payments => Set<Payment>();
+    public DbSet<Shift> Shifts => Set<Shift>();
+    public DbSet<FiledReturn> FiledReturns => Set<FiledReturn>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

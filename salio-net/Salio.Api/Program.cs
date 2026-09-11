@@ -11,6 +11,11 @@ builder.Services.AddDbContext<SalioDbContext>(options =>
 
 builder.Services.AddScoped<LedgerService>();
 builder.Services.AddScoped<JournalPoster>();
+builder.Services.AddScoped<SaleService>();
+builder.Services.AddScoped<StockService>();
+builder.Services.AddScoped<StockPoster>();
+builder.Services.AddScoped<ReportService>();
+builder.Services.AddScoped<TaxService>();
 
 builder.Services.AddControllers();
 builder.Services.AddOpenApi();
@@ -61,4 +66,5 @@ static async Task SetUpDevelopmentDatabaseAsync(WebApplication app)
     }
 
     await ChartOfAccountsSeeder.SeedAsync(db, organizationId, CancellationToken.None);
+    await TaxRateSeeder.SeedAsync(db, organizationId, CancellationToken.None);
 }

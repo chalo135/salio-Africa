@@ -10,6 +10,7 @@ namespace Salio.Tests
         private static readonly Guid ProductId = Guid.NewGuid();
 
         private static readonly Guid CashAccountId = Guid.NewGuid();
+        private static readonly Guid MpesaAccountId = Guid.NewGuid();
         private static readonly Guid SalesAccountId = Guid.NewGuid();
         private static readonly Guid CostOfGoodsSoldAccountId = Guid.NewGuid();
         private static readonly Guid InventoryAccountId = Guid.NewGuid();
@@ -24,12 +25,19 @@ namespace Salio.Tests
                 NewSaleLine(quantity: 1, unitPriceMinor: 5000, lineTotalMinor: 5000, unitCostMinor: 3500)
             };
 
+            List<Payment> payments = new()
+            {
+                NewPayment(PaymentMethod.Cash, 5000)
+            };
+
             SaleService service = new();
 
             List<JournalLine> journalLines = service.BuildJournalLines(
                 sale,
                 saleLines,
+                payments,
                 CashAccountId,
+                MpesaAccountId,
                 SalesAccountId,
                 CostOfGoodsSoldAccountId,
                 InventoryAccountId);
@@ -55,12 +63,19 @@ namespace Salio.Tests
                 NewSaleLine(quantity: 1, unitPriceMinor: 5000, lineTotalMinor: 5000, unitCostMinor: 3500)
             };
 
+            List<Payment> payments = new()
+            {
+                NewPayment(PaymentMethod.Cash, 5000)
+            };
+
             SaleService service = new();
 
             List<JournalLine> journalLines = service.BuildJournalLines(
                 sale,
                 saleLines,
+                payments,
                 CashAccountId,
+                MpesaAccountId,
                 SalesAccountId,
                 CostOfGoodsSoldAccountId,
                 InventoryAccountId);
@@ -81,6 +96,42 @@ namespace Salio.Tests
         }
 
         [Fact]
+        public void A_sale_with_no_recorded_cost_skips_the_cost_lines()
+        {
+            Sale sale = NewSale(totalMinor: 5000);
+
+            // Never received into stock, so there is no cost on record.
+            List<SaleLine> saleLines = new()
+            {
+                NewSaleLine(quantity: 1, unitPriceMinor: 5000, lineTotalMinor: 5000, unitCostMinor: 0)
+            };
+
+            List<Payment> payments = new()
+            {
+                NewPayment(PaymentMethod.Cash, 5000)
+            };
+
+            SaleService service = new();
+
+            List<JournalLine> journalLines = service.BuildJournalLines(
+                sale,
+                saleLines,
+                payments,
+                CashAccountId,
+                MpesaAccountId,
+                SalesAccountId,
+                CostOfGoodsSoldAccountId,
+                InventoryAccountId);
+
+            Assert.Equal(2, journalLines.Count);
+            Assert.Equal(5000, DebitFor(journalLines, CashAccountId));
+            Assert.Equal(5000, CreditFor(journalLines, SalesAccountId));
+
+            // The ledger must accept what the sale produced.
+            new LedgerService().PostJournal(new JournalEntry { Id = Guid.NewGuid() }, journalLines);
+        }
+
+        [Fact]
         public void A_sale_with_no_lines_throws()
         {
             Sale sale = NewSale(totalMinor: 0);
@@ -94,7 +145,9 @@ namespace Salio.Tests
                 service.BuildJournalLines(
                     sale,
                     saleLines,
+                    new List<Payment>(),
                     CashAccountId,
+                    MpesaAccountId,
                     SalesAccountId,
                     CostOfGoodsSoldAccountId,
                     InventoryAccountId);
@@ -136,6 +189,17 @@ namespace Salio.Tests
             OccurredAt = DateTimeOffset.UtcNow,
             TotalMinor = totalMinor,
             Status = SaleStatus.Completed
+        };
+
+        private static Payment NewPayment(PaymentMethod method, long amountMinor) => new()
+        {
+            Id = Guid.NewGuid(),
+            OrganizationId = OrganizationId,
+            SaleId = Guid.NewGuid(),
+            Method = method,
+            AmountMinor = amountMinor,
+            Reference = null,
+            ReceivedAt = DateTimeOffset.UtcNow
         };
 
         private static SaleLine NewSaleLine(
