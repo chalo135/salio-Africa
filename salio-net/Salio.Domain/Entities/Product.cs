@@ -9,6 +9,10 @@ namespace Salio.Domain.Entities
         public long SellPriceMinor { get; set; }
         public bool IsActive { get; set; } = true;
 
+        // Where the item physically sits, so it can be found without asking
+        // someone who remembers. Nullable: stock is stored wherever it fits.
+        public string? BinLocation { get; set; }
+
         // eTIMS — nullable and unused until KRA integration is built.
         public string? EtimsItemClsCd { get; set; }
         public string? EtimsPkgUnitCd { get; set; }

@@ -15,14 +15,52 @@ public class ProductsController : ControllerBase
 
     public ProductsController(SalioDbContext db) => _db = db;
 
+    // The shelf list. Quantity is never stored: it is the sum of every
+    // movement ever written for the product, added up here on each request.
     [HttpGet]
-    public async Task<ActionResult<List<Product>>> GetAll(
+    public async Task<ActionResult<List<ProductStockResponse>>> GetAll(
         [FromQuery][BindRequired] Guid organizationId, CancellationToken cancellationToken)
     {
-        return await _db.Products.AsNoTracking()
+        var products = await _db.Products.AsNoTracking()
             .Where(p => p.OrganizationId == organizationId && p.IsActive)
             .OrderBy(p => p.Sku)
             .ToListAsync(cancellationToken);
+
+        // Everything received counts positive, everything sold negative, so
+        // one sum per product is the quantity on hand.
+        var quantities = await _db.StockMovements.AsNoTracking()
+            .Where(m => m.OrganizationId == organizationId)
+            .GroupBy(m => m.ProductId)
+            .Select(g => new { ProductId = g.Key, Quantity = g.Sum(m => m.QuantityChange) })
+            .ToListAsync(cancellationToken);
+
+        var response = new List<ProductStockResponse>();
+
+        foreach (var product in products)
+        {
+            // A product that has never moved has no row above, so it stays 0.
+            decimal quantityOnHand = 0;
+
+            foreach (var row in quantities)
+            {
+                if (row.ProductId == product.Id)
+                {
+                    quantityOnHand = row.Quantity;
+                }
+            }
+
+            response.Add(new ProductStockResponse
+            {
+                Id = product.Id,
+                Sku = product.Sku,
+                Name = product.Name,
+                SellPriceMinor = product.SellPriceMinor,
+                BinLocation = product.BinLocation,
+                QuantityOnHand = quantityOnHand
+            });
+        }
+
+        return response;
     }
 
     // Inactive products are still found here: old sales point at them.
@@ -64,6 +102,7 @@ public class ProductsController : ControllerBase
             Sku = request.Sku,
             Name = request.Name,
             SellPriceMinor = request.SellPriceMinor,
+            BinLocation = request.BinLocation,
             IsActive = true
         };
         _db.Products.Add(product);

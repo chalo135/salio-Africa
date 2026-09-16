@@ -20,4 +20,8 @@ public class CreateProductRequest
 
     [Range(0, long.MaxValue)]
     public long SellPriceMinor { get; set; }
+
+    // Where it sits on the shelf. Optional: not every item has a fixed place.
+    [MaxLength(20)]
+    public string? BinLocation { get; set; }
 }

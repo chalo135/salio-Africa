@@ -14,6 +14,9 @@ namespace Salio.Infrastructure.Configurations
             builder.Property(p => p.Sku).IsRequired().HasMaxLength(50);
             builder.Property(p => p.Name).IsRequired().HasMaxLength(200);
 
+            // A shelf label like "A3" or "back room, top shelf".
+            builder.Property(p => p.BinLocation).HasMaxLength(20);
+
             builder.HasIndex(p => new { p.OrganizationId, p.Sku }).IsUnique();
 
             // eTIMS — nullable, unused for now. Lengths are provisional.
