@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Mvc.ModelBinding;
 using Microsoft.EntityFrameworkCore;
 using Salio.Api.Dtos;
 using Salio.Domain.Entities;
+using Salio.Domain.Services;
 using Salio.Infrastructure;
 
 namespace Salio.Api.Controllers;
@@ -12,8 +13,13 @@ namespace Salio.Api.Controllers;
 public class ProductsController : ControllerBase
 {
     private readonly SalioDbContext _db;
+    private readonly StockService _stockService;
 
-    public ProductsController(SalioDbContext db) => _db = db;
+    public ProductsController(SalioDbContext db, StockService stockService)
+    {
+        _db = db;
+        _stockService = stockService;
+    }
 
     // The shelf list. Quantity is never stored: it is the sum of every
     // movement ever written for the product, added up here on each request.
@@ -26,29 +32,30 @@ public class ProductsController : ControllerBase
             .OrderBy(p => p.Sku)
             .ToListAsync(cancellationToken);
 
-        // Everything received counts positive, everything sold negative, so
-        // one sum per product is the quantity on hand.
-        var quantities = await _db.StockMovements.AsNoTracking()
+        // Every movement in the shop, in ONE query. Asking the database per
+        // product would be the N+1 problem: 13 products, 14 round trips.
+        // Weighted average cost needs each movement in order, not just a sum,
+        // so the rows are grouped here rather than summed by the database.
+        var movements = await _db.StockMovements.AsNoTracking()
             .Where(m => m.OrganizationId == organizationId)
-            .GroupBy(m => m.ProductId)
-            .Select(g => new { ProductId = g.Key, Quantity = g.Sum(m => m.QuantityChange) })
             .ToListAsync(cancellationToken);
 
         var response = new List<ProductStockResponse>();
 
         foreach (var product in products)
         {
-            // A product that has never moved has no row above, so it stays 0.
-            decimal quantityOnHand = 0;
+            var productMovements = new List<StockMovement>();
 
-            foreach (var row in quantities)
+            foreach (var movement in movements)
             {
-                if (row.ProductId == product.Id)
+                if (movement.ProductId == product.Id)
                 {
-                    quantityOnHand = row.Quantity;
+                    productMovements.Add(movement);
                 }
             }
 
+            // The counting and costing rules live in StockService and stay
+            // there. A product that has never moved gets 0 from both.
             response.Add(new ProductStockResponse
             {
                 Id = product.Id,
@@ -56,7 +63,8 @@ public class ProductsController : ControllerBase
                 Name = product.Name,
                 SellPriceMinor = product.SellPriceMinor,
                 BinLocation = product.BinLocation,
-                QuantityOnHand = quantityOnHand
+                QuantityOnHand = _stockService.CurrentQuantity(productMovements),
+                AverageCostMinor = _stockService.CalculateWeightedAverageCost(productMovements)
             });
         }
 

@@ -1,0 +1,59 @@
+/*
+  Tailwind v4 - theme configuration for the till.
+
+  Everything is tuned for a phone held at a counter in daylight: dark text,
+  visible borders, one strong green for actions. Components must use these
+  semantic names (bg-primary, text-warning-foreground), never a raw colour.
+*/
+@import "tailwindcss";
+
+@theme {
+  /* The default palette is switched off, so only these names exist:
+     bg-primary works, bg-green-500 does not. Add a token when a screen
+     needs one. */
+  --color-*: initial;
+
+  /* Neutrals, warmed slightly (a hint of yellow, no blue) so the screen
+     doesn't look cold next to oily metal parts and cardboard boxes. */
+  --color-background: oklch(0.98 0.006 85); /* the page behind everything */
+  --color-surface: oklch(1 0 0); /* cards, rows, the bars */
+  --color-foreground: oklch(0.22 0.012 75); /* all main text, near black */
+  --color-muted-foreground: oklch(0.45 0.015 75); /* second lines. Still dark: 7:1 on white */
+  --color-border: oklch(0.85 0.012 80); /* quiet lines between rows */
+  --color-border-strong: oklch(0.65 0.02 80); /* outlines of things you tap: 3:1, visible in sun */
+
+  /* Deep, desaturated forest green. Dark enough that white text on it
+     stays readable outdoors. */
+  --color-primary: oklch(0.45 0.09 158);
+  --color-primary-foreground: oklch(0.99 0 0);
+  --color-primary-soft: oklch(0.95 0.03 158); /* quiet green fill, for the shelf chip */
+
+  /* Amber says "look at this": low or no stock. Never used for errors. */
+  --color-warning: oklch(0.78 0.15 75); /* a fill: badges */
+  --color-warning-foreground: oklch(0.25 0.04 70); /* dark text on that fill */
+  --color-warning-strong: oklch(0.52 0.13 70); /* amber as text on white, still 4.5:1 */
+
+  /* Red is reserved for things that went wrong. */
+  --color-error: oklch(0.48 0.19 27);
+  --color-error-foreground: oklch(0.99 0 0);
+
+  /* Type: five steps. Prices sit one step above product names. */
+  --text-*: initial;
+
+  --text-sm: 0.8125rem; /* SKU, shelf, quantity */
+  --text-sm--line-height: 1.125rem;
+  --text-base: 1rem; /* product names */
+  --text-base--line-height: 1.375rem;
+  --text-lg: 1.1875rem; /* prices */
+  --text-lg--line-height: 1.5rem;
+  --text-xl: 1.375rem; /* buttons */
+  --text-xl--line-height: 1.75rem;
+  --text-2xl: 1.75rem; /* the sale total */
+  --text-2xl--line-height: 2rem;
+
+  /* Money. Tabular figures give every digit the same width, so a column of
+     prices lines up digit under digit and the total doesn't jitter as it
+     changes. Put font-money on every currency value. */
+  --font-money: system-ui, "Segoe UI", Roboto, sans-serif;
+  --font-money--font-feature-settings: "tnum";
+}

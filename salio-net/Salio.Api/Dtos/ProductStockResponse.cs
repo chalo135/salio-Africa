@@ -14,6 +14,9 @@ public class ProductStockResponse
 
     public string? BinLocation { get; set; }
 
-    // Derived from StockMovements every time. Never stored.
+    // Both derived from StockMovements every time. Never stored.
     public decimal QuantityOnHand { get; set; }
+
+    // What one unit currently costs the shop, weighted across deliveries.
+    public long AverageCostMinor { get; set; }
 }

@@ -79,4 +79,11 @@ static async Task SetUpDevelopmentDatabaseAsync(WebApplication app)
 
     await ChartOfAccountsSeeder.SeedAsync(db, organizationId, CancellationToken.None);
     await TaxRateSeeder.SeedAsync(db, organizationId, CancellationToken.None);
+
+    // A shelf of motorcycle spares with opening stock, so the till has
+    // something to sell. The posters come from the same scope, so they share
+    // this db and its transaction.
+    var stockPoster = scope.ServiceProvider.GetRequiredService<StockPoster>();
+    var journalPoster = scope.ServiceProvider.GetRequiredService<JournalPoster>();
+    await DemoProductSeeder.SeedAsync(db, stockPoster, journalPoster, organizationId, CancellationToken.None);
 }
