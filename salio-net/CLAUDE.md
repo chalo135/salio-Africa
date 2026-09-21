@@ -37,7 +37,7 @@ because a previous codebase became unreadable to them. Therefore:
 | ORM | EF Core 10 + Npgsql |
 | Database | PostgreSQL 16 (Docker container `salio-db`) |
 | Tests | xUnit |
-| Frontend (later) | React + TypeScript + Vite + Tailwind + shadcn/ui |
+| Frontend | React 19 + TypeScript + Vite 8 + Tailwind v4, in `web/`. No shadcn/ui |
 
 ## Project layout
 
@@ -114,17 +114,47 @@ contested between sources and change with each Finance Act.
 ## What not to do
 
 - Don't add packages without being asked
-- Don't add authentication, logging frameworks, MediatR, AutoMapper, or any
+- Don't add logging frameworks, MediatR, AutoMapper, or any
   architectural pattern that wasn't requested
+- Authentication is Stage 7 and gets its own rules when that stage starts.
+  Until then, add no authentication code, packages or configuration.
 - Don't write repository interfaces over EF Core. `DbContext` is the repository
 - Don't create `Class1.cs` leftovers; delete them
 - Don't refactor code that wasn't part of the request
-- Don't write the frontend until the API for that feature works in Swagger
+- Don't write the frontend until the API for that feature works in Scalar
+  (http://localhost:5077/scalar/v1)
 
 ## Current stage
 
-**Stage 1 — Database and ledger.** Organizations table exists. Building the
-chart of accounts, journal entries, and `PostJournal`.
+Stage 7 — login, users and roles. Building.
 
-Stages after this: 2 products+stock, 3 the till, 4 shifts+payments,
-5 reports, 6 tax view.
+The state of the work is in BUILD_LOG.md. Read it before any task.
+
+### Stage 7 locked rules
+
+9.  The server decides which organisation a request may touch, from the
+    logged-in user. An OrganizationId sent by the client is never trusted
+    on its own. If the client names an organisation, the server must
+    confirm the user is a member of it before anything else happens.
+10. A user may belong to more than one organisation. Membership is its
+    own table: user, organisation, role. A user with no membership row
+    for an organisation can see nothing of it.
+11. Passwords are never stored, only hashes produced by ASP.NET Core
+    Identity's password hasher. No hand-written hashing, no hand-written
+    token signing, no cryptography written in this repo by anyone.
+12. A login lasts a limited time, never forever. Staff use their own
+    phones, so an owner must be able to sign out every device in their
+    organisation without changing other people's passwords.
+13. Two roles to start: Owner and Cashier. A Cashier may sell and see
+    their own sales. An Owner may do everything a Cashier can, plus see
+    money, profit, stock value and tax. New roles need a decision, not a
+    guess.
+14. No self-signup. Organisations and their first Owner are created by
+    the developer. An Owner creates their own Cashiers.
+
+### Owner-written code — do not edit
+- LedgerService.PostJournal
+- StockService weighted average cost
+- Any code that resolves which OrganizationId a request may touch
+
+If a task seems to need a change to any of these, stop and say so.
