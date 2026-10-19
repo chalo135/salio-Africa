@@ -25,6 +25,15 @@ namespace Salio.Infrastructure.Configurations
                 .WithMany()
                 .HasForeignKey(l => l.AccountId)
                 .OnDelete(DeleteBehavior.Restrict);
+
+            // A customer's balance is read by customer, so it needs its own
+            // index. Restrict: a customer with lines can never be deleted.
+            builder.HasIndex(l => new { l.OrganizationId, l.CustomerId });
+
+            builder.HasOne<Customer>()
+                .WithMany()
+                .HasForeignKey(l => l.CustomerId)
+                .OnDelete(DeleteBehavior.Restrict);
         }
     }
 }

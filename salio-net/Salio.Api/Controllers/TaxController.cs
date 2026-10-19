@@ -1,6 +1,8 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.ModelBinding;
 using Salio.Api.Dtos;
+using Salio.Api.Security;
 using Salio.Infrastructure;
 using Salio.Infrastructure.Tax;
 
@@ -11,26 +13,42 @@ namespace Salio.Api.Controllers;
 /// Nothing here talks to KRA.
 /// </summary>
 [ApiController]
+[Authorize]
 [Route("api/tax")]
 public class TaxController : ControllerBase
 {
     private readonly TaxService _tax;
+    private readonly OrganizationGuard _guard;
 
-    public TaxController(TaxService tax)
+    public TaxController(TaxService tax, OrganizationGuard guard)
     {
         _tax = tax;
+        _guard = guard;
     }
 
     [HttpGet("turnover-tax")]
     public async Task<ActionResult<TurnoverTaxResult>> GetTurnoverTax(
-        [FromQuery][BindRequired] Guid organizationId,
+        [FromQuery] Guid? organizationId,
         [FromQuery][BindRequired] DateOnly from,
         [FromQuery][BindRequired] DateOnly to,
         CancellationToken cancellationToken)
     {
+        var access = await _guard.ForAsync(User, organizationId, cancellationToken);
+
+        if (!access.IsAllowed)
+        {
+            return OrganizationGuard.Deny(access);
+        }
+
+        // Tax is the Owner's business (locked rule 13).
+        if (!access.IsOwner)
+        {
+            return OrganizationGuard.OwnerOnly();
+        }
+
         try
         {
-            return await _tax.GetTurnoverTaxAsync(organizationId, from, to, cancellationToken);
+            return await _tax.GetTurnoverTaxAsync(access.OrganizationId, from, to, cancellationToken);
         }
         catch (InvalidOperationException ex)
         {
@@ -40,14 +58,27 @@ public class TaxController : ControllerBase
 
     [HttpGet("filing-pack")]
     public async Task<ActionResult<FilingPack>> GetFilingPack(
-        [FromQuery][BindRequired] Guid organizationId,
+        [FromQuery] Guid? organizationId,
         [FromQuery][BindRequired] DateOnly from,
         [FromQuery][BindRequired] DateOnly to,
         CancellationToken cancellationToken)
     {
+        var access = await _guard.ForAsync(User, organizationId, cancellationToken);
+
+        if (!access.IsAllowed)
+        {
+            return OrganizationGuard.Deny(access);
+        }
+
+        // Tax is the Owner's business (locked rule 13).
+        if (!access.IsOwner)
+        {
+            return OrganizationGuard.OwnerOnly();
+        }
+
         try
         {
-            return await _tax.GetFilingPackAsync(organizationId, from, to, cancellationToken);
+            return await _tax.GetFilingPackAsync(access.OrganizationId, from, to, cancellationToken);
         }
         catch (InvalidOperationException ex)
         {
@@ -60,10 +91,23 @@ public class TaxController : ControllerBase
         RecordFiledReturnRequest request,
         CancellationToken cancellationToken)
     {
+        var access = await _guard.ForAsync(User, request.OrganizationId, cancellationToken);
+
+        if (!access.IsAllowed)
+        {
+            return OrganizationGuard.Deny(access);
+        }
+
+        // Tax is the Owner's business (locked rule 13).
+        if (!access.IsOwner)
+        {
+            return OrganizationGuard.OwnerOnly();
+        }
+
         try
         {
             var filed = await _tax.RecordFiledReturnAsync(
-                request.OrganizationId,
+                access.OrganizationId,
                 request.PeriodFrom,
                 request.PeriodTo,
                 request.TaxType,

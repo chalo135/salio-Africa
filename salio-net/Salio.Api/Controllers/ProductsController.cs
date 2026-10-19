@@ -1,7 +1,8 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.AspNetCore.Mvc.ModelBinding;
 using Microsoft.EntityFrameworkCore;
 using Salio.Api.Dtos;
+using Salio.Api.Security;
 using Salio.Domain.Entities;
 using Salio.Domain.Services;
 using Salio.Infrastructure;
@@ -9,35 +10,47 @@ using Salio.Infrastructure;
 namespace Salio.Api.Controllers;
 
 [ApiController]
+[Authorize]
 [Route("api/products")]
 public class ProductsController : ControllerBase
 {
     private readonly SalioDbContext _db;
     private readonly StockService _stockService;
+    private readonly OrganizationGuard _guard;
 
-    public ProductsController(SalioDbContext db, StockService stockService)
+    public ProductsController(
+        SalioDbContext db,
+        StockService stockService,
+        OrganizationGuard guard)
     {
         _db = db;
         _stockService = stockService;
+        _guard = guard;
     }
 
     // The shelf list. Quantity is never stored: it is the sum of every
     // movement ever written for the product, added up here on each request.
     [HttpGet]
     public async Task<ActionResult<List<ProductStockResponse>>> GetAll(
-        [FromQuery][BindRequired] Guid organizationId, CancellationToken cancellationToken)
+        [FromQuery] Guid? organizationId, CancellationToken cancellationToken)
     {
+        // Rule 9: the shop comes from the membership, not from the query.
+        var access = await _guard.ForAsync(User, organizationId, cancellationToken);
+
+        if (!access.IsAllowed)
+        {
+            return OrganizationGuard.Deny(access);
+        }
+
         var products = await _db.Products.AsNoTracking()
-            .Where(p => p.OrganizationId == organizationId && p.IsActive)
+            .Where(p => p.OrganizationId == access.OrganizationId && p.IsActive)
             .OrderBy(p => p.Sku)
             .ToListAsync(cancellationToken);
 
-        // Every movement in the shop, in ONE query. Asking the database per
-        // product would be the N+1 problem: 13 products, 14 round trips.
-        // Weighted average cost needs each movement in order, not just a sum,
-        // so the rows are grouped here rather than summed by the database.
+        // Everything received counts positive, everything sold negative, so
+        // one sum per product is the quantity on hand.
         var movements = await _db.StockMovements.AsNoTracking()
-            .Where(m => m.OrganizationId == organizationId)
+            .Where(m => m.OrganizationId == access.OrganizationId)
             .ToListAsync(cancellationToken);
 
         var response = new List<ProductStockResponse>();
@@ -64,7 +77,9 @@ public class ProductsController : ControllerBase
                 SellPriceMinor = product.SellPriceMinor,
                 BinLocation = product.BinLocation,
                 QuantityOnHand = _stockService.CurrentQuantity(productMovements),
-                AverageCostMinor = _stockService.CalculateWeightedAverageCost(productMovements)
+                AverageCostMinor = access.IsOwner
+                    ? _stockService.CalculateWeightedAverageCost(productMovements)
+                    : null
             });
         }
 
@@ -74,10 +89,18 @@ public class ProductsController : ControllerBase
     // Inactive products are still found here: old sales point at them.
     [HttpGet("{id:guid}")]
     public async Task<ActionResult<Product>> GetById(
-        Guid id, [FromQuery][BindRequired] Guid organizationId, CancellationToken cancellationToken)
+        Guid id, [FromQuery] Guid? organizationId, CancellationToken cancellationToken)
     {
+        var access = await _guard.ForAsync(User, organizationId, cancellationToken);
+
+        if (!access.IsAllowed)
+        {
+            return OrganizationGuard.Deny(access);
+        }
+
         var product = await _db.Products.AsNoTracking()
-            .FirstOrDefaultAsync(p => p.Id == id && p.OrganizationId == organizationId, cancellationToken);
+            .FirstOrDefaultAsync(
+                p => p.Id == id && p.OrganizationId == access.OrganizationId, cancellationToken);
 
         if (product is null)
         {
@@ -86,12 +109,26 @@ public class ProductsController : ControllerBase
         return product;
     }
 
+    // Adding to the catalogue is not selling, so it is the Owner's job
+    // (locked rule 13).
     [HttpPost]
     public async Task<ActionResult<Product>> Create(CreateProductRequest request, CancellationToken cancellationToken)
     {
+        var access = await _guard.ForAsync(User, request.OrganizationId, cancellationToken);
+
+        if (!access.IsAllowed)
+        {
+            return OrganizationGuard.Deny(access);
+        }
+
+        if (!access.IsOwner)
+        {
+            return OrganizationGuard.OwnerOnly();
+        }
+
         // The unique index would reject a duplicate with a 500. Say what is wrong instead.
         bool skuTaken = await _db.Products.AnyAsync(
-            p => p.OrganizationId == request.OrganizationId && p.Sku == request.Sku, cancellationToken);
+            p => p.OrganizationId == access.OrganizationId && p.Sku == request.Sku, cancellationToken);
 
         if (skuTaken)
         {
@@ -106,7 +143,7 @@ public class ProductsController : ControllerBase
         var product = new Product
         {
             Id = Guid.NewGuid(),
-            OrganizationId = request.OrganizationId,
+            OrganizationId = access.OrganizationId,
             Sku = request.Sku,
             Name = request.Name,
             SellPriceMinor = request.SellPriceMinor,

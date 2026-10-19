@@ -13,8 +13,8 @@ public class CreateJournalEntryRequest
     // TODO: this must come from the authenticated user once authentication
     // exists. Until then any caller can post into any organisation, which is
     // only acceptable in development.
-    [Required]
-    public Guid OrganizationId { get; set; }
+    // Optional: the server resolves the shop (locked rule 9).
+    public Guid? OrganizationId { get; set; }
 
     [Required]
     public DateOnly EntryDate { get; set; }

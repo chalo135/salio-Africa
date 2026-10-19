@@ -5,9 +5,9 @@ namespace Salio.Api.Dtos;
 // Id and IsActive are not here on purpose: the server decides those.
 public class CreateProductRequest
 {
-    // TODO: must come from the authenticated user once authentication exists.
-    [Required]
-    public Guid OrganizationId { get; set; }
+    // Optional. With one shop the server knows which it is; if it is sent,
+    // the server still checks the caller belongs to it (locked rule 9).
+    public Guid? OrganizationId { get; set; }
 
     // Lengths match ProductConfiguration, so a long value gets a 400, not a database error.
     [Required]

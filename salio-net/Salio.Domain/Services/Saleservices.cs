@@ -13,7 +13,9 @@ public class SaleService
         Guid mpesaAccountId,
         Guid salesAccountId,
         Guid cogsAccountId,
-        Guid inventoryAccountId)
+        Guid inventoryAccountId,
+        Guid receivableAccountId,
+        Guid? customerId)
     {
         if (lines.Count == 0)
         {
@@ -23,6 +25,30 @@ public class SaleService
         if (payments.Count == 0)
         {
             throw new InvalidOperationException("A sale must have at least one payment");
+        }
+
+        bool onCredit = false;
+
+        foreach (var payment in payments)
+        {
+            if (payment.Method == PaymentMethod.Credit)
+            {
+                onCredit = true;
+            }
+        }
+
+        // A credit sale is credit for the whole amount. Part cash, part
+        // credit is refused on purpose: the shop is ending those sales.
+        // Paying off part of a debt later is a customer payment, not this.
+        if (onCredit && payments.Count > 1)
+        {
+            throw new InvalidOperationException(
+                "A credit sale is for the whole amount. It cannot be mixed with cash or M-Pesa");
+        }
+
+        if (onCredit && (customerId is null || customerId == Guid.Empty))
+        {
+            throw new InvalidOperationException("A credit sale needs a customer");
         }
 
         long totalSale = 0;
@@ -56,10 +82,18 @@ public class SaleService
         var result = new List<JournalLine>();
 
         // One debit per tender, so cash and M-Pesa land in their own accounts.
-        // A split payment is two debits, not one.
+        // A split payment is two debits, not one. Credit debits Accounts
+        // Receivable, and that line names the customer who owes it.
         foreach (var payment in payments)
         {
-            result.Add(NewLine(sale, AccountFor(payment, cashAccountId, mpesaAccountId), payment.AmountMinor, 0));
+            if (payment.Method == PaymentMethod.Credit)
+            {
+                result.Add(NewLine(sale, receivableAccountId, payment.AmountMinor, 0, customerId));
+            }
+            else
+            {
+                result.Add(NewLine(sale, AccountFor(payment, cashAccountId, mpesaAccountId), payment.AmountMinor, 0));
+            }
         }
 
         result.Add(NewLine(sale, salesAccountId, 0, totalSale));
@@ -87,14 +121,14 @@ public class SaleService
             return mpesaAccountId;
         }
 
-        // Card money sits with the acquirer and credit is owed by the
-        // customer. Neither has an account in the chart yet, so refuse rather
-        // than book them as cash in the drawer.
+        // Card money sits with the acquirer, and there is no account for it
+        // in the chart yet, so refuse rather than book it as cash in the
+        // drawer. Credit never reaches here: it is handled above.
         throw new InvalidOperationException(
             payment.Method + " payments are not supported yet");
     }
 
-    private JournalLine NewLine(Sale sale, Guid accountId, long debit, long credit)
+    private JournalLine NewLine(Sale sale, Guid accountId, long debit, long credit, Guid? customerId = null)
     {
         return new JournalLine
         {
@@ -103,7 +137,8 @@ public class SaleService
             AccountId = accountId,
             DebitMinor = debit,
             CreditMinor = credit,
-            Currency = "KES"
+            Currency = "KES",
+            CustomerId = customerId
         };
     }
 }

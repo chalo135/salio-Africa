@@ -20,6 +20,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Salio.Domain\Salio.Domain.csproj" />
+    <ProjectReference Include="..\Salio.Infrastructure\Salio.Infrastructure.csproj" />
   </ItemGroup>
 
 </Project>

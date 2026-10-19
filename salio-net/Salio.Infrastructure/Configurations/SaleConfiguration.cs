@@ -19,6 +19,18 @@ namespace Salio.Infrastructure.Configurations
 
             builder.HasIndex(s => new { s.OrganizationId, s.SaleDate });
 
+            // "Show me my own sales" (locked rule 13). Restrict, so a person
+            // who has sold anything can never be deleted out of the books.
+            builder.HasOne<AppUser>()
+                .WithMany()
+                .HasForeignKey(s => s.AppUserId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            builder.HasOne<Customer>()
+                .WithMany()
+                .HasForeignKey(s => s.CustomerId)
+                .OnDelete(DeleteBehavior.Restrict);
+
             // eTIMS — nullable, unused for now. Lengths are provisional.
             builder.Property(s => s.EtimsControlNumber).HasMaxLength(100);
             builder.Property(s => s.EtimsSignature).HasMaxLength(200);

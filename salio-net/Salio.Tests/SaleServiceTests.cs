@@ -14,6 +14,8 @@ namespace Salio.Tests
         private static readonly Guid SalesAccountId = Guid.NewGuid();
         private static readonly Guid CostOfGoodsSoldAccountId = Guid.NewGuid();
         private static readonly Guid InventoryAccountId = Guid.NewGuid();
+        private static readonly Guid ReceivableAccountId = Guid.NewGuid();
+        private static readonly Guid CustomerId = Guid.NewGuid();
 
         [Fact]
         public void A_cash_sale_produces_four_balanced_journal_lines()
@@ -40,7 +42,9 @@ namespace Salio.Tests
                 MpesaAccountId,
                 SalesAccountId,
                 CostOfGoodsSoldAccountId,
-                InventoryAccountId);
+                InventoryAccountId,
+                ReceivableAccountId,
+                null);
 
             Assert.Equal(4, journalLines.Count);
 
@@ -78,7 +82,9 @@ namespace Salio.Tests
                 MpesaAccountId,
                 SalesAccountId,
                 CostOfGoodsSoldAccountId,
-                InventoryAccountId);
+                InventoryAccountId,
+                ReceivableAccountId,
+                null);
 
             long totalDebits = 0;
             long totalCredits = 0;
@@ -121,7 +127,9 @@ namespace Salio.Tests
                 MpesaAccountId,
                 SalesAccountId,
                 CostOfGoodsSoldAccountId,
-                InventoryAccountId);
+                InventoryAccountId,
+                ReceivableAccountId,
+                null);
 
             Assert.Equal(2, journalLines.Count);
             Assert.Equal(5000, DebitFor(journalLines, CashAccountId));
@@ -150,8 +158,96 @@ namespace Salio.Tests
                     MpesaAccountId,
                     SalesAccountId,
                     CostOfGoodsSoldAccountId,
-                    InventoryAccountId);
+                    InventoryAccountId,
+                    ReceivableAccountId,
+                    null);
             });
+        }
+
+        [Fact]
+        public void A_credit_sale_debits_receivable_for_the_customer_and_still_books_cost()
+        {
+            Sale sale = NewSale(totalMinor: 5000);
+
+            List<SaleLine> saleLines = new()
+            {
+                NewSaleLine(quantity: 1, unitPriceMinor: 5000, lineTotalMinor: 5000, unitCostMinor: 3500)
+            };
+
+            List<Payment> payments = new()
+            {
+                NewPayment(PaymentMethod.Credit, 5000)
+            };
+
+            List<JournalLine> journalLines = new SaleService().BuildJournalLines(
+                sale, saleLines, payments,
+                CashAccountId, MpesaAccountId, SalesAccountId, CostOfGoodsSoldAccountId,
+                InventoryAccountId, ReceivableAccountId, CustomerId);
+
+            Assert.Equal(4, journalLines.Count);
+            Assert.Equal(5000, DebitFor(journalLines, ReceivableAccountId));
+            Assert.Equal(-1, DebitFor(journalLines, CashAccountId));
+            Assert.Equal(5000, CreditFor(journalLines, SalesAccountId));
+
+            // Stock still leaves the shelf at cost.
+            Assert.Equal(3500, DebitFor(journalLines, CostOfGoodsSoldAccountId));
+            Assert.Equal(3500, CreditFor(journalLines, InventoryAccountId));
+
+            // Only the receivable line names the customer.
+            foreach (var line in journalLines)
+            {
+                Guid? expected = line.AccountId == ReceivableAccountId ? CustomerId : null;
+                Assert.Equal(expected, line.CustomerId);
+            }
+
+            new LedgerService().PostJournal(new JournalEntry { Id = Guid.NewGuid() }, journalLines);
+        }
+
+        [Fact]
+        public void Credit_mixed_with_cash_is_refused()
+        {
+            Sale sale = NewSale(totalMinor: 5000);
+
+            List<SaleLine> saleLines = new()
+            {
+                NewSaleLine(quantity: 1, unitPriceMinor: 5000, lineTotalMinor: 5000, unitCostMinor: 0)
+            };
+
+            List<Payment> payments = new()
+            {
+                NewPayment(PaymentMethod.Cash, 2000),
+                NewPayment(PaymentMethod.Credit, 3000)
+            };
+
+            var ex = Assert.Throws<InvalidOperationException>(() =>
+                new SaleService().BuildJournalLines(
+                    sale, saleLines, payments,
+                    CashAccountId, MpesaAccountId, SalesAccountId, CostOfGoodsSoldAccountId,
+                    InventoryAccountId, ReceivableAccountId, CustomerId));
+
+            Assert.Contains("cannot be mixed", ex.Message);
+        }
+
+        [Fact]
+        public void A_credit_sale_without_a_customer_is_refused()
+        {
+            Sale sale = NewSale(totalMinor: 5000);
+
+            List<SaleLine> saleLines = new()
+            {
+                NewSaleLine(quantity: 1, unitPriceMinor: 5000, lineTotalMinor: 5000, unitCostMinor: 0)
+            };
+
+            List<Payment> payments = new()
+            {
+                NewPayment(PaymentMethod.Credit, 5000)
+            };
+
+            Assert.Throws<InvalidOperationException>(() =>
+                new SaleService().BuildJournalLines(
+                    sale, saleLines, payments,
+                    CashAccountId, MpesaAccountId, SalesAccountId, CostOfGoodsSoldAccountId,
+                    InventoryAccountId, ReceivableAccountId, null));
         }
 
         private static long DebitFor(List<JournalLine> journalLines, Guid accountId)

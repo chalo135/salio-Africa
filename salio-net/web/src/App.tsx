@@ -1,4 +1,14 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
+import LoginScreen from "./LoginScreen";
+import CreateShopScreen from "./CreateShopScreen";
+import ShopChooser from "./ShopChooser";
+import SalesScreen from "./SalesScreen";
+import StockInScreen from "./StockInScreen";
+import ExpensesScreen from "./ExpensesScreen";
+import CustomerPicker, { type Customer } from "./CustomerPicker";
+import OwedScreen from "./OwedScreen";
+import Receipt, { type ReceiptLine, type ReceiptPayment } from "./Receipt";
+import { API, kes, type SignedInUser } from "./auth";
 
 type Product = {
   id: string;
@@ -7,7 +17,7 @@ type Product = {
   sellPriceMinor: number;
   binLocation: string | null;
   quantityOnHand: number;
-  averageCostMinor: number;
+  averageCostMinor: number | null;
 };
 
 type CartLine = {
@@ -17,21 +27,11 @@ type CartLine = {
   unitPriceMinor: number;
 };
 
-const ORG_ID = "00000000-0000-0000-0000-000000000001";
-
-// Money is whole cents everywhere. Divide by 100 only to show it.
-function kes(minor: number) {
-  return (minor / 100).toLocaleString("en-KE", {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  });
-}
-
 // What one unit of this line costs the shop today, or 0 if nothing is known
 // yet - a part that has never been received has no cost to compare against.
 function costOf(line: CartLine, products: Product[]) {
   const product = products.find((p) => p.id === line.productId);
-  return product ? product.averageCostMinor : 0;
+  return product ? product.averageCostMinor ?? 0 : 0;
 }
 
 function belowCost(line: CartLine, products: Product[]) {
@@ -39,7 +39,48 @@ function belowCost(line: CartLine, products: Product[]) {
   return cost > 0 && line.unitPriceMinor < cost;
 }
 
+// The server's own words for why a sale was refused. Its ProblemDetails
+// "detail" is written for the cashier; the raw body is not.
+async function refusalText(response: Response) {
+  try {
+    const problem = await response.json();
+
+    if (typeof problem.detail === "string" && problem.detail !== "") {
+      return problem.detail;
+    }
+
+    // Model validation failures carry their reasons in "errors" instead.
+    if (problem.errors) {
+      const first = Object.values(problem.errors).flat()[0];
+      if (typeof first === "string") {
+        return first;
+      }
+    }
+
+    if (typeof problem.title === "string") {
+      return problem.title;
+    }
+  } catch {
+    // Not JSON: fall through.
+  }
+
+  return "The server refused the sale.";
+}
+
 export default function App() {
+  // Who is signed in, and which of their shops is open. Both come from the
+  // server: the till no longer knows an organisation id of its own.
+  const [user, setUser] = useState<SignedInUser | null>(null);
+  const [shopId, setShopId] = useState<string | null>(null);
+  const [checkingLogin, setCheckingLogin] = useState(true);
+
+  // Which screen is showing. The till is what opens: selling comes first.
+  const [view, setView] = useState<"till" | "sales" | "stockIn" | "expenses" | "owed">("till");
+
+  // Before signing in there are two possible screens, and creating a shop is
+  // reachable in development only (locked rule 14: no self-signup).
+  const [signInView, setSignInView] = useState<"login" | "createShop">("login");
+
   const [products, setProducts] = useState<Product[]>([]);
   const [search, setSearch] = useState("");
 
@@ -48,14 +89,162 @@ export default function App() {
   const [activeCart, setActiveCart] = useState(0);
   const [paying, setPaying] = useState(false);
 
+  // The receipt for the sale just made, while it is on screen.
+  const [receipt, setReceipt] = useState<{
+    saleNumber: string;
+    occurredAt: string;
+    lines: ReceiptLine[];
+    payments: ReceiptPayment[];
+    totalMinor: number;
+    customerName: string | null;
+    customerBalanceMinor: number | null;
+  } | null>(null);
+
+  // True while the Credit button's "which customer?" screen is open.
+  const [choosingCustomer, setChoosingCustomer] = useState(false);
+
+  // Why the last sale was not saved. Shown in the till, never as a receipt.
+  const [saleProblem, setSaleProblem] = useState("");
+
   // The cart being served right now. Everything below reads this.
   const lines = carts[activeCart] ?? [];
 
+  // True while a shelf reload is in flight. A ref, not state, because
+  // changing it must not re-render anything.
+  const reloading = useRef(false);
+
+  // On start-up, ask whether the cookie from last time is still good.
   useEffect(() => {
-    fetch(`http://localhost:5077/api/products?organizationId=${ORG_ID}`)
-      .then((response) => response.json())
-      .then((data) => setProducts(data));
+    fetch(`${API}/api/auth/me`, { credentials: "include" })
+      .then((response) => (response.ok ? response.json() : null))
+      .then((me: SignedInUser | null) => {
+        setUser(me);
+        // One shop needs no chooser.
+        if (me && me.shops.length === 1) {
+          setShopId(me.shops[0].organizationId);
+        }
+      })
+      .catch(() => setUser(null))
+      .finally(() => setCheckingLogin(false));
   }, []);
+
+  // The only place the shelf is loaded: when a shop opens, and again after
+  // each sale. One function, so the two can never drift apart.
+  //
+  // credentials: "include" sends the login cookie; without it the server
+  // would not know who is asking.
+  async function loadProducts(organizationId: string) {
+    // Never two at once. Besides sparing the phone's connection, this stops
+    // an older answer landing after a newer one and putting yesterday's
+    // quantities back on screen.
+    if (reloading.current) {
+      return;
+    }
+
+    reloading.current = true;
+
+    try {
+      const response = await fetch(
+        `${API}/api/products?organizationId=${organizationId}`,
+        { credentials: "include" },
+      );
+
+      if (response.status === 401) {
+        // Not a failed refresh: the login ran out, or an owner signed every
+        // device out. The next sale would be refused anyway.
+        setUser(null);
+        setShopId(null);
+        return;
+      }
+
+      if (!response.ok) {
+        // Leave the shelf exactly as it is. Quantities go stale, which is
+        // better than an empty list, and a sale that is already saved is not
+        // worth an error box.
+        return;
+      }
+
+      setProducts(await response.json());
+    } catch {
+      // Same again: keep what is on screen and say nothing.
+    } finally {
+      // Runs on every path, including the early returns above, so a failed
+      // reload cannot jam the timer shut.
+      reloading.current = false;
+    }
+  }
+
+  // The shelf, for the shop that is open.
+  useEffect(() => {
+    if (shopId === null) {
+      return;
+    }
+
+    loadProducts(shopId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [shopId]);
+
+  // Two phones serve the same shop, so each one picks up the other's sales
+  // by asking again every 30 seconds.
+  useEffect(() => {
+    if (shopId === null) {
+      return;
+    }
+
+    // Copied into a typed const so the timer functions below know it is a
+    // string, without writing "!" anywhere.
+    const organizationId: string = shopId;
+
+    let timer: number | undefined;
+
+    function startTimer() {
+      stopTimer();
+      timer = window.setInterval(() => loadProducts(organizationId), 30000);
+    }
+
+    function stopTimer() {
+      if (timer !== undefined) {
+        window.clearInterval(timer);
+        timer = undefined;
+      }
+    }
+
+    // A phone in a pocket should not be calling the API all day. When the
+    // tab comes back, catch up at once rather than waiting out the 30
+    // seconds: the numbers on screen are as old as the sleep was long.
+    function onVisibilityChange() {
+      if (document.hidden) {
+        stopTimer();
+        return;
+      }
+
+      loadProducts(organizationId);
+      startTimer();
+    }
+
+    startTimer();
+    document.addEventListener("visibilitychange", onVisibilityChange);
+
+    // React runs this when the till closes or the shop changes, so timers
+    // can never pile up one on top of another.
+    return () => {
+      stopTimer();
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [shopId]);
+
+  async function signOut() {
+    await fetch(`${API}/api/auth/logout`, {
+      method: "POST",
+      credentials: "include",
+    });
+    setUser(null);
+    setShopId(null);
+    setProducts([]);
+    setCarts([[]]);
+    setActiveCart(0);
+  }
 
   const visible = products.filter((p) => {
     const q = search.toLowerCase();
@@ -64,6 +253,7 @@ export default function App() {
 
   // Replaces only the active cart and leaves the others exactly as they were.
   function setActiveLines(newLines: CartLine[]) {
+    setSaleProblem("");
     setCarts(carts.map((cart, index) => (index === activeCart ? newLines : cart)));
   }
 
@@ -88,6 +278,7 @@ export default function App() {
   }
 
   function newCart() {
+    setSaleProblem("");
     setCarts([...carts, []]);
     setActiveCart(carts.length);
   }
@@ -97,11 +288,14 @@ export default function App() {
     total = total + line.quantity * line.unitPriceMinor;
   }
 
-  async function pay(method: number) {
+  // method: 0 Cash, 1 M-Pesa, 3 Credit (the server's numbers; 2 is Card).
+  // A credit sale is for the whole total and names the customer.
+  async function pay(method: number, customer?: Customer) {
   setPaying(true);
+  setSaleProblem("");
 
   const body = {
-    organizationId: ORG_ID,
+    organizationId: shopId,
     saleDate: new Date().toISOString().slice(0, 10),
     lines: lines.map((line) => ({
       productId: line.productId,
@@ -110,34 +304,231 @@ export default function App() {
       taxBand: "A",
     })),
     payments: [{ method: method, amountMinor: total, reference: null }],
+    customerId: customer?.id ?? null,
   };
 
   try {
-    const response = await fetch("http://localhost:5077/api/sales", {
+    const response = await fetch(`${API}/api/sales`, {
       method: "POST",
+      credentials: "include",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
     });
 
     if (response.ok) {
       const sale = await response.json();
-      alert("Sale " + sale.saleNumber + " — KES " + kes(total));
+
+      // What was sold, taken from the cart before it is cleared below.
+      setReceipt({
+        saleNumber: sale.saleNumber,
+        occurredAt: sale.occurredAt,
+        lines: lines.map((line) => ({
+          name: line.name,
+          quantity: line.quantity,
+          unitPriceMinor: line.unitPriceMinor,
+        })),
+        payments: [
+          { method: method === 3 ? "Credit" : method === 0 ? "Cash" : "Mpesa", amountMinor: total },
+        ],
+        totalMinor: sale.totalMinor,
+        customerName: sale.customerName ?? null,
+        customerBalanceMinor: sale.customerBalanceMinor ?? null,
+      });
 
       const remaining = carts.filter((_, index) => index !== activeCart);
       setCarts(remaining.length > 0 ? remaining : [[]]);
       setActiveCart(0);
+
+      // The cart is closed and the next customer can be served now. The
+      // shelf catches up behind them: this is deliberately not awaited, so
+      // selling never waits for the reload.
+      if (shopId !== null) {
+        loadProducts(shopId);
+      }
+    } else if (response.status === 401) {
+      alert("Your login has ended. Please sign in again.");
+      setUser(null);
+      setShopId(null);
     } else {
-      alert("Failed: " + (await response.text()));
+      setSaleProblem(await refusalText(response));
     }
   } catch {
-    alert("Could not reach the till server. Is the API running?");
+    setSaleProblem("Could not reach the till server. Check the connection and try again.");
   } finally {
     setPaying(false);
   }
 } 
 
+  if (checkingLogin) {
+    return (
+      <p className="p-4 text-base text-muted-foreground">Checking your login…</p>
+    );
+  }
+
+  if (user === null) {
+    if (signInView === "createShop") {
+      return <CreateShopScreen onBack={() => setSignInView("login")} />;
+    }
+
+    return (
+      <LoginScreen
+        onSignedIn={(signedIn) => {
+          setUser(signedIn);
+          if (signedIn.shops.length === 1) {
+            setShopId(signedIn.shops[0].organizationId);
+          }
+        }}
+        onCreateShop={
+          import.meta.env.DEV ? () => setSignInView("createShop") : undefined
+        }
+      />
+    );
+  }
+
+  if (shopId === null) {
+    return <ShopChooser shops={user.shops} onChoose={setShopId} />;
+  }
+
+  const shop = user.shops.find((s) => s.organizationId === shopId);
+  const shopName = shop?.name ?? "";
+
+  // Receiving stock is money and stock value: Owner only (locked rule 13).
+  // The server refuses a Cashier anyway; this keeps them from reaching it.
+  const isOwner = shop?.role === 0;
+
+  if (choosingCustomer) {
+    return (
+      <CustomerPicker
+        shopId={shopId}
+        totalMinor={total}
+        onCancel={() => setChoosingCustomer(false)}
+        onConfirm={(customer) => {
+          setChoosingCustomer(false);
+          pay(3, customer);
+        }}
+        onExpired={() => {
+          setChoosingCustomer(false);
+          setUser(null);
+          setShopId(null);
+        }}
+      />
+    );
+  }
+
+  if (receipt !== null) {
+    // Done closes it. The cart was already emptied when the sale saved.
+    return <Receipt shopName={shopName} {...receipt} onDone={() => setReceipt(null)} />;
+  }
+
+  if (view === "stockIn" && isOwner) {
+    return (
+      <StockInScreen
+        shopId={shopId}
+        products={products}
+        onBack={() => setView("till")}
+        onReceived={() => loadProducts(shopId)}
+        onExpired={() => {
+          setView("till");
+          setUser(null);
+          setShopId(null);
+        }}
+      />
+    );
+  }
+
+  // Money out is money: Owner only, like Stock in.
+  if (view === "expenses" && isOwner) {
+    return (
+      <ExpensesScreen
+        shopId={shopId}
+        onBack={() => setView("till")}
+        onExpired={() => {
+          setView("till");
+          setUser(null);
+          setShopId(null);
+        }}
+      />
+    );
+  }
+
+  // Who owes what is money: Owner only.
+  if (view === "owed" && isOwner) {
+    return (
+      <OwedScreen
+        shopId={shopId}
+        onBack={() => setView("till")}
+        onExpired={() => {
+          setView("till");
+          setUser(null);
+          setShopId(null);
+        }}
+      />
+    );
+  }
+
+  if (view === "sales") {
+    return (
+      <SalesScreen
+        shopId={shopId}
+        shopName={shopName}
+        onBack={() => setView("till")}
+        onExpired={() => {
+          // Same as everywhere else: an ended login goes back to sign in.
+          setView("till");
+          setUser(null);
+          setShopId(null);
+        }}
+      />
+    );
+  }
+
   return (
     <div className="flex h-dvh flex-col bg-background text-foreground">
+      {/* Who is serving, which shop, and the way out. */}
+      {/* The name gets its own row and the buttons wrap below it: an Owner
+          has five, more than a phone fits on one line. */}
+      <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-border bg-surface px-3 py-1.5">
+        <span className="min-w-0 basis-full truncate text-sm font-semibold">
+          {shopName} · {user.fullName}
+        </span>
+        <button
+          onClick={() => setView("sales")}
+          className="min-h-11 shrink-0 rounded-lg border-2 border-primary px-3 text-sm font-bold text-primary"
+        >
+          Sales
+        </button>
+        {isOwner && (
+          <button
+            onClick={() => setView("stockIn")}
+            className="min-h-11 shrink-0 rounded-lg border-2 border-primary px-3 text-sm font-bold text-primary"
+          >
+            Stock in
+          </button>
+        )}
+        {isOwner && (
+          <button
+            onClick={() => setView("expenses")}
+            className="min-h-11 shrink-0 rounded-lg border-2 border-primary px-3 text-sm font-bold text-primary"
+          >
+            Money out
+          </button>
+        )}
+        {isOwner && (
+          <button
+            onClick={() => setView("owed")}
+            className="min-h-11 shrink-0 rounded-lg border-2 border-primary px-3 text-sm font-bold text-primary"
+          >
+            Owed
+          </button>
+        )}
+        <button
+          onClick={signOut}
+          className="min-h-11 shrink-0 rounded-lg border-2 border-border-strong px-3 text-sm font-bold"
+        >
+          Sign out
+        </button>
+      </div>
+
       {/* Search: always at the top, never scrolls away. */}
       <header className="shrink-0 border-b border-border bg-surface p-2">
         <input
@@ -192,7 +583,10 @@ export default function App() {
           {carts.map((cart, index) => (
             <button
               key={index}
-              onClick={() => setActiveCart(index)}
+              onClick={() => {
+                setActiveCart(index);
+                setSaleProblem("");
+              }}
               className={
                 "flex min-h-11 shrink-0 items-center gap-1.5 rounded-lg px-3 text-base font-semibold " +
                 (index === activeCart
@@ -263,6 +657,15 @@ export default function App() {
           <span className="font-money text-2xl font-bold">KES {kes(total)}</span>
         </div>
 
+        {/* A refused sale. Red, in words, and the cart is still here: it must
+            never look like a sale that went through. */}
+        {saleProblem !== "" && (
+          <div role="alert" className="mx-2 mb-2 rounded-lg bg-error px-3 py-2 text-error-foreground">
+            <p className="text-base font-bold">Sale NOT saved</p>
+            <p className="text-base">{saleProblem}</p>
+          </div>
+        )}
+
         <div className="space-y-2 px-2 pb-2">
           <button
             onClick={() => pay(0)}
@@ -279,6 +682,17 @@ export default function App() {
               text-primary disabled:opacity-40"
           >
             Pay M-Pesa
+          </button>
+          <button
+            onClick={() => {
+              setSaleProblem("");
+              setChoosingCustomer(true);
+            }}
+            disabled={lines.length === 0 || paying}
+            className="h-14 w-full rounded-xl border-2 border-warning-strong text-xl font-bold
+              text-foreground disabled:opacity-40"
+          >
+            Credit
           </button>
         </div>
       </section>

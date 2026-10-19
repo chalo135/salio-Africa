@@ -59,6 +59,43 @@ namespace Salio.Infrastructure.Migrations
                     b.ToTable("Accounts");
                 });
 
+            modelBuilder.Entity("Salio.Domain.Entities.AppUser", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Email")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("character varying(256)");
+
+                    b.Property<string>("FullName")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("PasswordHash")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("character varying(256)");
+
+                    b.Property<Guid>("SecurityStamp")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Email")
+                        .IsUnique();
+
+                    b.ToTable("AppUsers");
+                });
+
             modelBuilder.Entity("Salio.Domain.Entities.FiledReturn", b =>
                 {
                     b.Property<Guid>("Id")
@@ -160,6 +197,33 @@ namespace Salio.Infrastructure.Migrations
                     b.HasIndex("OrganizationId", "AccountId");
 
                     b.ToTable("JournalLines");
+                });
+
+            modelBuilder.Entity("Salio.Domain.Entities.Membership", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("AppUserId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid>("OrganizationId")
+                        .HasColumnType("uuid");
+
+                    b.Property<int>("Role")
+                        .HasColumnType("integer");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AppUserId");
+
+                    b.HasIndex("OrganizationId", "AppUserId")
+                        .IsUnique();
+
+                    b.ToTable("Memberships");
                 });
 
             modelBuilder.Entity("Salio.Domain.Entities.Organization", b =>
@@ -274,6 +338,9 @@ namespace Salio.Infrastructure.Migrations
                     b.Property<Guid>("Id")
                         .HasColumnType("uuid");
 
+                    b.Property<Guid?>("AppUserId")
+                        .HasColumnType("uuid");
+
                     b.Property<string>("EtimsControlNumber")
                         .HasMaxLength(100)
                         .HasColumnType("character varying(100)");
@@ -313,6 +380,8 @@ namespace Salio.Infrastructure.Migrations
                         .HasColumnType("bigint");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("AppUserId");
 
                     b.HasIndex("OrganizationId", "SaleDate");
 
@@ -496,6 +565,21 @@ namespace Salio.Infrastructure.Migrations
                         .IsRequired();
                 });
 
+            modelBuilder.Entity("Salio.Domain.Entities.Membership", b =>
+                {
+                    b.HasOne("Salio.Domain.Entities.AppUser", null)
+                        .WithMany()
+                        .HasForeignKey("AppUserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("Salio.Domain.Entities.Organization", null)
+                        .WithMany()
+                        .HasForeignKey("OrganizationId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("Salio.Domain.Entities.Payment", b =>
                 {
                     b.HasOne("Salio.Domain.Entities.Sale", null)
@@ -503,6 +587,14 @@ namespace Salio.Infrastructure.Migrations
                         .HasForeignKey("SaleId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
+                });
+
+            modelBuilder.Entity("Salio.Domain.Entities.Sale", b =>
+                {
+                    b.HasOne("Salio.Domain.Entities.AppUser", null)
+                        .WithMany()
+                        .HasForeignKey("AppUserId")
+                        .OnDelete(DeleteBehavior.Restrict);
                 });
 
             modelBuilder.Entity("Salio.Domain.Entities.SaleLine", b =>

@@ -5,9 +5,8 @@ namespace Salio.Api.Dtos;
 
 public class RecordFiledReturnRequest
 {
-    // TODO: must come from the authenticated user once authentication exists.
-    [Required]
-    public Guid OrganizationId { get; set; }
+    // Optional: the server resolves the shop (locked rule 9).
+    public Guid? OrganizationId { get; set; }
 
     [Required]
     public DateOnly PeriodFrom { get; set; }

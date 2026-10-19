@@ -22,7 +22,7 @@ namespace Salio.Infrastructure
             new("SPK-NGK-C7HSA", "Spark Plug NGK C7HSA", "A2", 35000, 24000, 40),
             new("CLT-PLT-BX150", "Clutch Plate Set - Boxer 150", "B1", 120000, 85000, 9),
             new("PST-KIT-BX150", "Piston Kit, Standard - Boxer 150", "C2", 350000, 260000, 4),
-            new("CDI-BX150", "CDI Unit - Boxer 150", "C1", 150000, 105000, 0),
+            new("CDI-BX150", "CDI Unit - Boxer 150", "C1", 150000, 105000, 10),
             new("TYR-300-18", "Rear Tyre 3.00-18", "D1", 380000, 290000, 5),
             new("TUB-300-18", "Inner Tube 3.00-18", "D2", 65000, 43000, 18),
             new("MIR-PAIR-UNI", "Side Mirrors, Pair - Universal", "A3", 45000, 28000, 11),

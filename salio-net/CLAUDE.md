@@ -1,3 +1,4 @@
+Never /Do not hallucinate
 # Salio — Claude Code context
 
 Read this before writing any code in this repo.
@@ -149,12 +150,39 @@ The state of the work is in BUILD_LOG.md. Read it before any task.
     their own sales. An Owner may do everything a Cashier can, plus see
     money, profit, stock value and tax. New roles need a decision, not a
     guess.
-14. No self-signup. Organisations and their first Owner are created by
-    the developer. An Owner creates their own Cashiers.
-
-### Owner-written code — do not edit
-- LedgerService.PostJournal
-- StockService weighted average cost
-- Any code that resolves which OrganizationId a request may touch
-
+14. No self-signup yet. The developer creates each organisation and its first
+    Owner account, then hands it over. Every customer is installed by hand
+    until the setup screens have been used on a real shopkeeper — that is how
+    the missing steps get found. Self-signup comes after: it needs email
+    verification, rate limiting, and an answer for abandoned and abusive
+    shops.
+15. Salio's direction is self-service: a shopkeeper signs up, sets up their
+    own shop, and brings their own opening data. That is the product Salio
+    is becoming and nothing may be built in a way that blocks it — no
+    hardcoded organisation, no setting only a developer can reach, no
+    assumption that a shop starts empty.
+    It is not built yet, and it is not one job. It is three, in this order:
+    setup screens (chart of accounts, tax, KRA PIN, opening stock),
+    self-signup (email verification, rate limiting, an abuse answer), then
+    import. Import is the hardest and comes last: an import writes opening
+    stock, which writes journal entries, so a bad import corrupts the books
+    silently. No import feature ships without a preview the shopkeeper
+    approves before anything is written.
+## Owner-written code — do not create or edit these files
+- Salio.Domain/Services/LedgerService.cs
+- Salio.Domain/Services/StockService.cs
+- Salio.Domain/Services/MembershipRules.cs
 If a task seems to need a change to any of these, stop and say so.
+
+## Stages after 7
+
+8.  Seeing the shop. The sales list, the day sheet, and a real receipt.
+    Read-only screens over endpoints that already work.
+9.  Stock receipt. Goods arriving: an endpoint, a screen, and the journal
+    entry behind it. Until this exists a shop cannot restock.
+10. Setup screens. What a shopkeeper configures for themselves: shop name,
+    tax status, opening stock. Built by hand for the pilot shop first.
+11. Self-signup. A shopkeeper creates their own shop and Owner account.
+    Needs email verification, rate limiting, a robot check, and an answer for
+    a shop set up wrong. Does not ship before 10 has been used by a real
+    shopkeeper.

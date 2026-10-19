@@ -22,6 +22,9 @@ public class SalioDbContext : DbContext
     public DbSet<Payment> Payments => Set<Payment>();
     public DbSet<Shift> Shifts => Set<Shift>();
     public DbSet<FiledReturn> FiledReturns => Set<FiledReturn>();
+    public DbSet<AppUser> AppUsers => Set<AppUser>();
+    public DbSet<Membership> Memberships => Set<Membership>();
+    public DbSet<Customer> Customers => Set<Customer>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

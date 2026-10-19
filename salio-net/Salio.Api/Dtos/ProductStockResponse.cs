@@ -18,5 +18,7 @@ public class ProductStockResponse
     public decimal QuantityOnHand { get; set; }
 
     // What one unit currently costs the shop, weighted across deliveries.
-    public long AverageCostMinor { get; set; }
+    // Null for a Cashier: locked rule 13 keeps cost and stock value for the
+    // Owner, and average cost is what stock value is made of.
+    public long? AverageCostMinor { get; set; }
 }

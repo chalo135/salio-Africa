@@ -12,6 +12,8 @@ namespace Salio.Infrastructure;
 /// </summary>
 public class ReportService
 {
+    private const string CostOfGoodsSoldCode = "5000";
+
     private readonly SalioDbContext _db;
     private readonly StockService _stockService;
 
@@ -86,7 +88,9 @@ public class ReportService
         DateOnly toDate = to;
 
         // Same shape as the trial balance, but narrowed to a date range and to
-        // the two classes that make up trading: what was sold, what it cost.
+        // the two classes a profit is made of: income and expense. Equity is
+        // left out here, which is what keeps Drawings (3100) off this report:
+        // money the family takes out is not a cost of running the shop.
         var totals = await (
             from line in _db.JournalLines.AsNoTracking()
             join entry in _db.JournalEntries.AsNoTracking()
@@ -122,9 +126,11 @@ public class ReportService
 
         var revenueRows = new List<ProfitAndLossRow>();
         var costOfSalesRows = new List<ProfitAndLossRow>();
+        var runningCostRows = new List<ProfitAndLossRow>();
 
         long revenueTotalMinor = 0;
         long costOfSalesTotalMinor = 0;
+        long runningCostsTotalMinor = 0;
 
         foreach (var total in totals)
         {
@@ -142,11 +148,26 @@ public class ReportService
             {
                 // Expense sits on the debit side, so the sign is the other way.
                 long amountMinor = total.DebitMinor - total.CreditMinor;
+                var row = NewRow(total.Id, total.Code, total.Name, total.AccountClass, amountMinor);
 
-                costOfSalesRows.Add(NewRow(total.Id, total.Code, total.Name, total.AccountClass, amountMinor));
-                costOfSalesTotalMinor = costOfSalesTotalMinor + amountMinor;
+                // Only 5000 is cost of sales. Every other expense account is a
+                // running cost: the seeded 5100 to 5900, and the 5001 to 5899
+                // codes an owner's own categories are given, which "5100 and
+                // above" would have left out of the report altogether.
+                if (total.Code == CostOfGoodsSoldCode)
+                {
+                    costOfSalesRows.Add(row);
+                    costOfSalesTotalMinor = costOfSalesTotalMinor + amountMinor;
+                }
+                else
+                {
+                    runningCostRows.Add(row);
+                    runningCostsTotalMinor = runningCostsTotalMinor + amountMinor;
+                }
             }
         }
+
+        long grossProfitMinor = revenueTotalMinor - costOfSalesTotalMinor;
 
         return new ProfitAndLossReport
         {
@@ -154,9 +175,12 @@ public class ReportService
             To = to,
             RevenueRows = revenueRows,
             CostOfSalesRows = costOfSalesRows,
+            RunningCostRows = runningCostRows,
             RevenueTotalMinor = revenueTotalMinor,
             CostOfSalesTotalMinor = costOfSalesTotalMinor,
-            GrossProfitMinor = revenueTotalMinor - costOfSalesTotalMinor
+            GrossProfitMinor = grossProfitMinor,
+            RunningCostsTotalMinor = runningCostsTotalMinor,
+            NetProfitMinor = grossProfitMinor - runningCostsTotalMinor
         };
     }
 

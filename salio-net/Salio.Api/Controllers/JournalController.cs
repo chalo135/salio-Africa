@@ -1,23 +1,27 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.AspNetCore.Mvc.ModelBinding;
 using Microsoft.EntityFrameworkCore;
 using Salio.Api.Dtos;
+using Salio.Api.Security;
 using Salio.Domain.Entities;
 using Salio.Infrastructure;
 
 namespace Salio.Api.Controllers;
 
 [ApiController]
+[Authorize]
 [Route("api/journal-entries")]
 public class JournalController : ControllerBase
 {
     private readonly JournalPoster _journalPoster;
     private readonly SalioDbContext _db;
+    private readonly OrganizationGuard _guard;
 
-    public JournalController(JournalPoster journalPoster, SalioDbContext db)
+    public JournalController(JournalPoster journalPoster, SalioDbContext db, OrganizationGuard guard)
     {
         _journalPoster = journalPoster;
         _db = db;
+        _guard = guard;
     }
 
     [HttpPost]
@@ -25,10 +29,22 @@ public class JournalController : ControllerBase
         CreateJournalEntryRequest request,
         CancellationToken cancellationToken)
     {
+        var access = await _guard.ForAsync(User, request.OrganizationId, cancellationToken);
+
+        if (!access.IsAllowed)
+        {
+            return OrganizationGuard.Deny(access);
+        }
+
+        if (!access.IsOwner)
+        {
+            return OrganizationGuard.OwnerOnly();
+        }
+
         var entry = new JournalEntry
         {
             Id = Guid.NewGuid(),
-            OrganizationId = request.OrganizationId,
+            OrganizationId = access.OrganizationId,
             EntryDate = request.EntryDate,
             Description = request.Description,
             SourceType = request.SourceType,
@@ -82,15 +98,27 @@ public class JournalController : ControllerBase
     [HttpGet("{id:guid}")]
     public async Task<ActionResult<JournalEntryResponse>> GetById(
         Guid id,
-        [FromQuery][BindRequired] Guid organizationId,
+        [FromQuery] Guid? organizationId,
         CancellationToken cancellationToken)
     {
+        var access = await _guard.ForAsync(User, organizationId, cancellationToken);
+
+        if (!access.IsAllowed)
+        {
+            return OrganizationGuard.Deny(access);
+        }
+
+        if (!access.IsOwner)
+        {
+            return OrganizationGuard.OwnerOnly();
+        }
+
         // Filtering on OrganizationId as well as Id is not belt and braces: it
         // is what stops one shop reading another shop's books by guessing an id.
         var entry = await _db.JournalEntries
             .AsNoTracking()
             .FirstOrDefaultAsync(
-                e => e.Id == id && e.OrganizationId == organizationId,
+                e => e.Id == id && e.OrganizationId == access.OrganizationId,
                 cancellationToken);
 
         if (entry is null)
@@ -100,7 +128,7 @@ public class JournalController : ControllerBase
 
         var lines = await _db.JournalLines
             .AsNoTracking()
-            .Where(l => l.JournalEntryId == entry.Id && l.OrganizationId == organizationId)
+            .Where(l => l.JournalEntryId == entry.Id && l.OrganizationId == access.OrganizationId)
             .OrderBy(l => l.AccountId)
             .ToListAsync(cancellationToken);
 
