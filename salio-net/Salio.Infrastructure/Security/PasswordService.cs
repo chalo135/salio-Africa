@@ -20,15 +20,22 @@ public class PasswordService
 
     public bool Check(AppUser user, string plainPassword)
     {
-        // A user with no hash yet can never match. Asking the hasher to read
-        // an empty hash is pointless.
-        if (string.IsNullOrEmpty(user.PasswordHash))
+        return Check(user, user.PasswordHash, plainPassword);
+    }
+
+    // The same check against another hash this service made for this user:
+    // a trusted device's secret, or its PIN. Same hasher, same rules.
+    public bool Check(AppUser user, string storedHash, string plainPassword)
+    {
+        // No hash yet can never match. Asking the hasher to read an empty
+        // hash is pointless.
+        if (string.IsNullOrEmpty(storedHash))
         {
             return false;
         }
 
         PasswordVerificationResult result =
-            _hasher.VerifyHashedPassword(user, user.PasswordHash, plainPassword);
+            _hasher.VerifyHashedPassword(user, storedHash, plainPassword);
 
         // SuccessRehashNeeded means the password is correct, but the stored
         // hash was made by an older, weaker setting than today's. The person

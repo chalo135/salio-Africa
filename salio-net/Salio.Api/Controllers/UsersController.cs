@@ -4,14 +4,15 @@ using Microsoft.EntityFrameworkCore;
 using Salio.Api.Dtos;
 using Salio.Api.Security;
 using Salio.Infrastructure;
-using Salio.Infrastructure.Security;
 
 namespace Salio.Api.Controllers;
 
 /// <summary>
-/// An Owner managing the people in their own shop (locked rule 14: an Owner
-/// creates their own Cashiers). Every action is scoped to the shop the caller
-/// is an Owner of, never to a shop id they simply named.
+/// Shop-wide sign-out. Adding people is PeopleController's job (a temporary
+/// password the person must change); the old POST /api/users, where an Owner
+/// chose someone's permanent password, was removed on 2026-11-07. Every
+/// action is scoped to the shop the caller is an Owner of, never to a shop id
+/// they simply named.
 /// </summary>
 [ApiController]
 [Authorize]
@@ -19,62 +20,12 @@ namespace Salio.Api.Controllers;
 public class UsersController : ControllerBase
 {
     private readonly SalioDbContext _db;
-    private readonly UserCreator _userCreator;
     private readonly OrganizationGuard _guard;
 
-    public UsersController(SalioDbContext db, UserCreator userCreator, OrganizationGuard guard)
+    public UsersController(SalioDbContext db, OrganizationGuard guard)
     {
         _db = db;
-        _userCreator = userCreator;
         _guard = guard;
-    }
-
-    [HttpPost]
-    public async Task<ActionResult<CreatedUserResponse>> Create(
-        CreateUserRequest request,
-        CancellationToken cancellationToken)
-    {
-        var access = await _guard.ForAsync(User, request.OrganizationId, cancellationToken);
-
-        if (!access.IsAllowed)
-        {
-            return OrganizationGuard.Deny(access);
-        }
-
-        if (!access.IsOwner)
-        {
-            return OrganizationGuard.OwnerOnly();
-        }
-
-        try
-        {
-            var created = await _userCreator.CreateAsync(
-                access.OrganizationId,
-                request.FullName,
-                request.Email,
-                request.Password,
-                request.Role,
-                cancellationToken);
-
-            return new CreatedUserResponse
-            {
-                Id = created.Id,
-                FullName = created.FullName,
-                Email = created.Email,
-                Role = request.Role,
-                OrganizationId = access.OrganizationId
-            };
-        }
-        catch (InvalidOperationException ex)
-        {
-            // A short password, a taken email. The caller needs to read why.
-            return BadRequest(new ProblemDetails
-            {
-                Title = "The user was rejected",
-                Detail = ex.Message,
-                Status = StatusCodes.Status400BadRequest
-            });
-        }
     }
 
     /// <summary>

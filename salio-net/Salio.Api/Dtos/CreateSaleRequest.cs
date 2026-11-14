@@ -22,4 +22,9 @@ public class CreateSaleRequest
     // Who takes the goods on credit. Required for a credit sale, ignored
     // otherwise. Must be a customer of this shop.
     public Guid? CustomerId { get; set; }
+
+    // The id the till made for this checkout. Sending the same id twice
+    // returns the first sale rather than booking a second one. Optional, so
+    // an older till or a script still works without it.
+    public Guid? ClientRequestId { get; set; }
 }

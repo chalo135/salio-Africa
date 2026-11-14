@@ -1,0 +1,84 @@
+# Salio's rules, written once and used by both Caddy set-ups:
+#   deploy/caddy/Caddyfile         Path A: Salio's own Caddy container
+#   deploy/caddy/salio-host.caddy  Path B: the Caddy already on the server
+#
+# Used as:   import salio_site <api address> <till address>
+# Change a rule here and both paths get it.
+
+(salio_site) {
+	encode zstd gzip
+
+	# File uploads: a product import (up to 5 MB) and a supplier invoice
+	# photo or PDF (up to 10 MB). Each is a single path matcher on purpose:
+	# Caddy sorts those longest-path first, so these win over /api/*
+	# wherever they are written. No slash before the * so the bare path
+	# matches too: the invoice upload is POST /api/supplier-invoices itself.
+	handle /api/imports* {
+		request_body {
+			max_size 11MB
+		}
+		reverse_proxy {args[0]} {
+			lb_try_duration 10s
+			lb_try_interval 500ms
+		}
+	}
+
+	handle /api/supplier-invoices* {
+		request_body {
+			max_size 11MB
+		}
+		reverse_proxy {args[0]} {
+			lb_try_duration 10s
+			lb_try_interval 500ms
+		}
+	}
+
+	# Every other API call, /api/health included: 1 MB is plenty for JSON.
+	# The API keeps its /api prefix: its routes are /api/...
+	#
+	# lb_try_duration: while the API restarts (a release, a crash) Caddy
+	# keeps trying to connect for up to 10 seconds before answering 502.
+	# Only a failed connection is retried, never a request the API already
+	# received, so nothing can be recorded twice.
+	handle /api/* {
+		request_body {
+			max_size 1MB
+		}
+		reverse_proxy {args[0]} {
+			lb_try_duration 10s
+			lb_try_interval 500ms
+		}
+	}
+
+	# Everything else is the till (static files from the web container).
+	handle {
+		reverse_proxy {args[1]}
+	}
+
+	header {
+		# Browsers remember for a year to use HTTPS only for this host.
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "same-origin"
+
+		# Nobody may show Salio inside a frame on another page.
+		X-Frame-Options "DENY"
+
+		# The invoice screen takes photos, so the camera stays allowed for
+		# Salio itself. What a till has no use for is switched off.
+		Permissions-Policy "camera=(self), microphone=(), geolocation=(), payment=(), usb=()"
+
+		# ENFORCED, and only directives that cannot break the till: no
+		# framing, no <base> hijack, no forms posting elsewhere, no plugins.
+		Content-Security-Policy "frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'"
+
+		# REPORT-ONLY: the full policy. The browser blocks nothing; it only
+		# writes what WOULD have been blocked to its console. Move it into
+		# the enforced header above once a week in the shop has shown a
+		# clean console. 'unsafe-inline' is for the small install script in
+		# index.html; blob: and data: are for the invoice photo canvas.
+		Content-Security-Policy-Report-Only "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' blob: data:; font-src 'self' data:; connect-src 'self'; worker-src 'self'; manifest-src 'self'; media-src 'self' blob:; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'"
+
+		-Server
+	}
+}

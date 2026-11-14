@@ -40,9 +40,17 @@ namespace Salio.Infrastructure
         {
             // Checked per SKU, so products made by hand are left alone and a
             // restart never creates duplicates.
-            var existingSkus = await db.Products
+            var existingProducts = await db.Products
                 .Where(p => p.OrganizationId == organizationId)
-                .Select(p => p.Sku)
+                .ToListAsync(cancellationToken);
+
+            // Products that have moved at least once. A demo product that has
+            // never moved gets its opening stock again: that is what is left
+            // after the demo data is wiped with the products kept.
+            var productIdsWithMovements = await db.StockMovements
+                .Where(m => m.OrganizationId == organizationId)
+                .Select(m => m.ProductId)
+                .Distinct()
                 .ToListAsync(cancellationToken);
 
             var products = new List<Product>();
@@ -51,22 +59,27 @@ namespace Salio.Infrastructure
 
             foreach (var demo in Shelf)
             {
-                if (existingSkus.Contains(demo.Sku))
+                var product = existingProducts.FirstOrDefault(p => p.Sku == demo.Sku);
+
+                if (product is null)
                 {
+                    product = new Product
+                    {
+                        Id = Guid.NewGuid(),
+                        OrganizationId = organizationId,
+                        Sku = demo.Sku,
+                        Name = demo.Name,
+                        SellPriceMinor = demo.SellPriceMinor,
+                        BinLocation = demo.BinLocation,
+                        IsActive = true
+                    };
+                    products.Add(product);
+                }
+                else if (productIdsWithMovements.Contains(product.Id))
+                {
+                    // Already has a history. Never add opening stock on top of it.
                     continue;
                 }
-
-                var product = new Product
-                {
-                    Id = Guid.NewGuid(),
-                    OrganizationId = organizationId,
-                    Sku = demo.Sku,
-                    Name = demo.Name,
-                    SellPriceMinor = demo.SellPriceMinor,
-                    BinLocation = demo.BinLocation,
-                    IsActive = true
-                };
-                products.Add(product);
 
                 // Out of stock on purpose: no movement at all, so quantity is 0.
                 if (demo.OpeningQuantity == 0)
@@ -89,7 +102,7 @@ namespace Salio.Infrastructure
                 openingValueMinor = openingValueMinor + (demo.OpeningQuantity * demo.UnitCostMinor);
             }
 
-            if (products.Count == 0)
+            if (products.Count == 0 && movements.Count == 0)
             {
                 return;
             }

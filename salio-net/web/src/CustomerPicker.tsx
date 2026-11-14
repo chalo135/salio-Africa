@@ -1,5 +1,8 @@
 import { useState, useEffect } from "react";
 import { API, kes } from "./auth";
+import SalioLoader from "./SalioLoader";
+import useShowLoader from "./useShowLoader";
+import { apiFetch, problemText } from "./api";
 
 export type Customer = {
   id: string;
@@ -7,28 +10,6 @@ export type Customer = {
   phone: string;
   balanceMinor: number; // what they owe now, worked out by the server
 };
-
-// The server's own words for a refusal: "detail" is written for a person.
-async function refusalText(response: Response) {
-  try {
-    const problem = await response.json();
-    if (typeof problem.detail === "string" && problem.detail !== "") {
-      return problem.detail;
-    }
-    if (problem.errors) {
-      const first = Object.values(problem.errors).flat()[0];
-      if (typeof first === "string") {
-        return first;
-      }
-    }
-    if (typeof problem.title === "string") {
-      return problem.title;
-    }
-  } catch {
-    // Not JSON: fall through.
-  }
-  return "The server refused it.";
-}
 
 // Who is taking the goods on credit. Opens from the till's Credit button.
 // What the customer already owes is shown for the cashier to weigh up, never
@@ -62,7 +43,7 @@ export default function CustomerPicker({
   useEffect(() => {
     let cancelled = false;
 
-    fetch(`${API}/api/customers?organizationId=${shopId}`, { credentials: "include" })
+    apiFetch(`${API}/api/customers?organizationId=${shopId}`, { credentials: "include" })
       .then(async (response) => {
         if (cancelled) return;
         if (response.status === 401) {
@@ -70,13 +51,13 @@ export default function CustomerPicker({
           return;
         }
         if (!response.ok) {
-          setLoadProblem(await refusalText(response));
+          setLoadProblem(await problemText(response));
           return;
         }
         setCustomers(await response.json());
       })
       .catch(() => {
-        if (!cancelled) setLoadProblem("Could not reach the till server.");
+        if (!cancelled) setLoadProblem("Can't reach Salio");
       });
 
     return () => {
@@ -92,7 +73,7 @@ export default function CustomerPicker({
 
   async function addCustomer() {
     if (newName.trim() === "" || newPhone.trim() === "") {
-      setAddProblem("Type a name and a phone number.");
+      setAddProblem("Name and phone needed");
       return;
     }
 
@@ -100,7 +81,7 @@ export default function CustomerPicker({
     setAddProblem("");
 
     try {
-      const response = await fetch(`${API}/api/customers`, {
+      const response = await apiFetch(`${API}/api/customers`, {
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
@@ -114,7 +95,7 @@ export default function CustomerPicker({
 
       if (!response.ok) {
         // What was typed stays, so it can be corrected.
-        setAddProblem(await refusalText(response));
+        setAddProblem(await problemText(response));
         return;
       }
 
@@ -125,16 +106,18 @@ export default function CustomerPicker({
       setNewPhone("");
       setChosen(created);
     } catch {
-      setAddProblem("Could not reach the till server. The customer was not added.");
+      setAddProblem("Can't reach Salio. Not added.");
     } finally {
       setAddBusy(false);
     }
   }
 
+  const showLoading = useShowLoader(customers === null && loadProblem === "");
+
   // ---------- a customer is chosen: confirm ----------
   if (chosen !== null) {
     return (
-      <div className="flex h-dvh flex-col bg-background text-foreground">
+      <div className="flex h-full flex-col bg-background text-foreground">
         <div className="flex shrink-0 items-center gap-2 border-b border-border bg-surface px-2 py-1.5">
           <button
             onClick={() => setChosen(null)}
@@ -142,7 +125,7 @@ export default function CustomerPicker({
           >
             ‹ Back
           </button>
-          <span className="text-base font-bold">Sell on credit</span>
+          <span className="text-base font-bold">On credit</span>
         </div>
 
         <main className="min-h-0 flex-1 overflow-y-auto bg-surface p-4">
@@ -181,13 +164,13 @@ export default function CustomerPicker({
             onClick={() => onConfirm(chosen)}
             className="h-14 w-full rounded-xl bg-primary text-xl font-bold text-primary-foreground"
           >
-            Sell on credit to {chosen.name}
+            Credit to {chosen.name}
           </button>
           <button
             onClick={onCancel}
             className="h-12 w-full rounded-xl border-2 border-border-strong text-base font-bold"
           >
-            Cancel, back to the till
+            Cancel
           </button>
         </div>
       </div>
@@ -196,7 +179,7 @@ export default function CustomerPicker({
 
   // ---------- who is it? ----------
   return (
-    <div className="flex h-dvh flex-col bg-background text-foreground">
+    <div className="flex h-full flex-col bg-background text-foreground">
       <div className="flex shrink-0 items-center gap-2 border-b border-border bg-surface px-2 py-1.5">
         <button
           onClick={onCancel}
@@ -204,22 +187,22 @@ export default function CustomerPicker({
         >
           ‹ Till
         </button>
-        <span className="text-base font-bold">Credit: which customer?</span>
+        <span className="text-base font-bold">Which customer?</span>
       </div>
 
       <header className="shrink-0 border-b border-border bg-surface p-2">
         <input
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          placeholder="Search name or phone"
+          placeholder="Search customers"
           className="h-12 w-full rounded-lg border-2 border-border-strong bg-surface px-3 text-lg
             placeholder:text-muted-foreground focus:border-primary focus:outline-none"
         />
       </header>
 
       <main className="min-h-0 flex-1 overflow-y-auto">
-        {customers === null && loadProblem === "" && (
-          <p className="p-4 text-base text-muted-foreground">Loading customers…</p>
+        {customers === null && loadProblem === "" && showLoading && (
+          <SalioLoader size="inline" message="Loading…" />
         )}
 
         {loadProblem !== "" && (
@@ -254,7 +237,7 @@ export default function CustomerPicker({
                 }}
                 className="min-h-12 w-full rounded-xl border-2 border-dashed border-primary text-base font-bold text-primary"
               >
-                + New customer
+                New customer
               </button>
             ) : (
               <div className="space-y-2">
@@ -300,7 +283,7 @@ export default function CustomerPicker({
                     disabled={addBusy}
                     className="h-12 rounded-xl bg-primary text-base font-bold text-primary-foreground disabled:opacity-40"
                   >
-                    {addBusy ? "Adding…" : "Add customer"}
+                    {addBusy ? "Adding…" : "Add"}
                   </button>
                 </div>
               </div>
@@ -333,8 +316,8 @@ export default function CustomerPicker({
         ))}
 
         {customers !== null && matches.length === 0 && (
-          <p className="p-4 text-base text-muted-foreground">
-            {q === "" ? "No customers yet. Add the first one above." : "No customer matches that."}
+          <p className="p-4 text-base md:text-sm text-muted-foreground">
+            {q === "" ? "No customers yet" : "No match"}
           </p>
         )}
       </main>

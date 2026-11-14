@@ -21,6 +21,8 @@
   <ItemGroup>
     <ProjectReference Include="..\Salio.Domain\Salio.Domain.csproj" />
     <ProjectReference Include="..\Salio.Infrastructure\Salio.Infrastructure.csproj" />
+    <!-- Read by PlatformAdminTests: its controllers, DTOs and admin filter. -->
+    <ProjectReference Include="..\Salio.Api\Salio.Api.csproj" />
   </ItemGroup>
 
 </Project>

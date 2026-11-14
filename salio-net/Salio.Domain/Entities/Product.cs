@@ -13,6 +13,13 @@ namespace Salio.Domain.Entities
         // someone who remembers. Nullable: stock is stored wherever it fits.
         public string? BinLocation { get; set; }
 
+        // Filled in by a product import or by hand. All optional.
+        public string? Category { get; set; }
+        public string? Barcode { get; set; }
+
+        // When stock falls to this many, it is time to order more.
+        public int? ReorderLevel { get; set; }
+
         // eTIMS — nullable and unused until KRA integration is built.
         public string? EtimsItemClsCd { get; set; }
         public string? EtimsPkgUnitCd { get; set; }

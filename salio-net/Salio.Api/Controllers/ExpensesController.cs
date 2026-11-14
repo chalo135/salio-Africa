@@ -22,6 +22,7 @@ public class ExpensesController : ControllerBase
     private const string MpesaCode = "1010";
     private const string DrawingsCode = "3100";
     private const string CostOfGoodsSoldCode = "5000";
+    private const string StockLossCode = "5700";
 
     private readonly SalioDbContext _db;
     private readonly ExpenseService _expenseService;
@@ -275,7 +276,9 @@ public class ExpensesController : ControllerBase
 
     // A shop cost, or Drawings. Never Sales, Inventory, Cash or any other
     // account, and never 5000: cost of goods sold is written by sales, from
-    // what the stock cost, not typed in by hand.
+    // what the stock cost, not typed in by hand. Never 5700 either: stock
+    // loss is written by a stock count, from what the missing stock cost; no
+    // cash leaves the drawer for it.
     private static bool IsPayableHere(Account account)
     {
         if (account.Code == DrawingsCode && account.AccountClass == AccountClass.Equity)
@@ -283,7 +286,9 @@ public class ExpensesController : ControllerBase
             return true;
         }
 
-        return account.AccountClass == AccountClass.Expense && account.Code != CostOfGoodsSoldCode;
+        return account.AccountClass == AccountClass.Expense
+            && account.Code != CostOfGoodsSoldCode
+            && account.Code != StockLossCode;
     }
 
     private static Account? FindAccount(List<Account> accounts, Guid id)

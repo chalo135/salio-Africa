@@ -62,6 +62,17 @@ to anything in Domain.
 2. **Every table has `OrganizationId` (Guid).** Every query filters on it.
    No exceptions, including lookup tables.
 
+   Named exemptions (each decided, each with its reason written on the
+   entity; the guard test in Salio.Tests/OrganizationIdGuardTests.cs lists
+   them). Any other table without `OrganizationId` is a bug:
+   - `Organization`: the shop itself; its own Id is the organisation id.
+   - `AppUser`: a person, who may work in several shops (rule 10).
+   - `TrustedDevice`: a person's phone, not a shop's.
+   - `SetupCode`: platform-level, not tenant-level. A code exists before the
+     shop it creates; its nullable `OrganizationId` is set only once redeemed.
+   - `AdminAuditLog`: platform-level, not tenant-level. The platform admin's
+     own record of what they did, across shops.
+
 3. **Only `JournalPoster.PostAsync()` writes to `JournalEntries` and
    `JournalLines`**, and it always calls `LedgerService.PostJournal()` first.
    No controller, no other service, no direct `DbContext` write. Ever.
@@ -150,12 +161,15 @@ The state of the work is in BUILD_LOG.md. Read it before any task.
     their own sales. An Owner may do everything a Cashier can, plus see
     money, profit, stock value and tax. New roles need a decision, not a
     guess.
-14. No self-signup yet. The developer creates each organisation and its first
-    Owner account, then hands it over. Every customer is installed by hand
-    until the setup screens have been used on a real shopkeeper — that is how
-    the missing steps get found. Self-signup comes after: it needs email
-    verification, rate limiting, and an answer for abandoned and abusive
-    shops.
+14. A client sets up their own shop, but only with a setup code the
+    developer issued to them. No code, no shop. A code works once and
+    expires. The client types their own password, so the developer never
+    learns it; nobody installs a shop by hand in the database any more.
+    This is not open self-signup: that still needs email verification, an
+    answer for abandoned and abusive shops, and more than the login rate
+    limit. Choosing Services does not disable stock: it sets the default
+    wording and which screens appear first, and a services business can add
+    stock later without re-running setup.
 15. Salio's direction is self-service: a shopkeeper signs up, sets up their
     own shop, and brings their own opening data. That is the product Salio
     is becoming and nothing may be built in a way that blocks it — no
@@ -168,6 +182,17 @@ The state of the work is in BUILD_LOG.md. Read it before any task.
     stock, which writes journal entries, so a bad import corrupts the books
     silently. No import feature ships without a preview the shopkeeper
     approves before anything is written.
+
+### Stock locked rule
+
+16. Stock may go below zero. A till never refuses a sale, because a refused
+    sale is taken in cash and recorded nowhere. Negative stock means the shelf
+    holds parts Salio was never told about, so it is a prompt to receive
+    stock, never a reason to block selling. Salio must make it visible at the
+    moment it happens and keep it visible until stock is received. Weighted
+    average cost is not meaningful while quantity is negative, and any figure
+    derived from it must not be presented as fact.
+
 ## Owner-written code — do not create or edit these files
 - Salio.Domain/Services/LedgerService.cs
 - Salio.Domain/Services/StockService.cs

@@ -61,6 +61,21 @@ public class SalesController : ControllerBase
             return Unauthorized();
         }
 
+        // A checkout this till has already sent. On a dropped connection the
+        // cashier presses Pay again with the SAME id, and this hands back the
+        // first sale's receipt rather than booking a second sale and taking
+        // the stock off the shelf twice. Checked before anything is written.
+        if (request.ClientRequestId is Guid alreadySentId)
+        {
+            var alreadySold = await FindByClientRequestIdAsync(
+                access.OrganizationId, alreadySentId, cancellationToken);
+
+            if (alreadySold is not null)
+            {
+                return alreadySold;
+            }
+        }
+
         var accounts = await _db.Accounts
             .AsNoTracking()
             .Where(a => a.OrganizationId == access.OrganizationId && a.IsActive)
@@ -137,26 +152,34 @@ public class SalesController : ControllerBase
             // shown their own sales.
             AppUserId = sellerId,
 
-            CustomerId = customer?.Id
+            CustomerId = customer?.Id,
+
+            // Kept so a second try at this same checkout is recognised.
+            ClientRequestId = request.ClientRequestId
         };
 
         // Rule 9 again: a product id from the till is only trusted once it
         // is known to belong to this shop. Without this, one shop could sell
         // another shop's product, and an unknown id became a 500.
+        // Each product is kept, so its name and SKU can be copied onto the line.
+        var productsSold = new Dictionary<Guid, Product>();
+
         foreach (var lineRequest in request.Lines)
         {
-            bool productIsOurs = await _db.Products
+            var product = await _db.Products
                 .AsNoTracking()
-                .AnyAsync(
+                .FirstOrDefaultAsync(
                     p => p.Id == lineRequest.ProductId
                         && p.OrganizationId == access.OrganizationId,
                     cancellationToken);
 
-            if (!productIsOurs)
+            if (product is null)
             {
                 return BadRequest(Rejected(
-                    "That product is not in this shop: " + lineRequest.ProductId));
+                    "Nothing in this shop matches: " + lineRequest.ProductId));
             }
+
+            productsSold[product.Id] = product;
         }
 
         var saleLines = new List<SaleLine>();
@@ -180,6 +203,11 @@ public class SalesController : ControllerBase
                 OrganizationId = sale.OrganizationId,
                 SaleId = sale.Id,
                 ProductId = lineRequest.ProductId,
+
+                // As it is called today. A later rename leaves this receipt alone.
+                ProductName = productsSold[lineRequest.ProductId].Name,
+                Sku = productsSold[lineRequest.ProductId].Sku,
+
                 Quantity = lineRequest.Quantity,
                 UnitPriceMinor = lineRequest.UnitPriceMinor,
                 LineTotalMinor = lineTotalMinor,
@@ -256,6 +284,23 @@ public class SalesController : ControllerBase
 
             await transaction.CommitAsync(cancellationToken);
         }
+        catch (DbUpdateException) when (request.ClientRequestId is not null)
+        {
+            // Both tries got past the check above and the database refused
+            // the second. One of them won; hand back its receipt. If nothing
+            // is found this was some other clash, so let it through.
+            await transaction.RollbackAsync(cancellationToken);
+
+            var raced = await FindByClientRequestIdAsync(
+                access.OrganizationId, request.ClientRequestId.Value, cancellationToken);
+
+            if (raced is null)
+            {
+                throw;
+            }
+
+            return raced;
+        }
         catch (InvalidOperationException ex)
         {
             await transaction.RollbackAsync(cancellationToken);
@@ -284,6 +329,65 @@ public class SalesController : ControllerBase
             JournalEntryId = journalEntry.Id,
             CustomerId = customer?.Id,
             CustomerName = customer?.Name,
+            CustomerBalanceMinor = customerBalanceMinor
+        };
+    }
+
+    // The receipt for a sale this till already sent, found by the id it made
+    // for that checkout. Everything is read back from what was written: no
+    // figure here is worked out again.
+    private async Task<SaleResponse?> FindByClientRequestIdAsync(
+        Guid organizationId,
+        Guid clientRequestId,
+        CancellationToken cancellationToken)
+    {
+        var sale = await _db.Sales
+            .AsNoTracking()
+            .FirstOrDefaultAsync(
+                s => s.OrganizationId == organizationId
+                    && s.ClientRequestId == clientRequestId,
+                cancellationToken);
+
+        if (sale is null)
+        {
+            return null;
+        }
+
+        Guid journalEntryId = await _db.JournalEntries
+            .AsNoTracking()
+            .Where(e => e.OrganizationId == organizationId
+                && e.SourceType == SourceType.Sale
+                && e.SourceId == sale.Id)
+            .Select(e => e.Id)
+            .FirstOrDefaultAsync(cancellationToken);
+
+        string? customerName = null;
+        long? customerBalanceMinor = null;
+
+        if (sale.CustomerId is Guid customerId)
+        {
+            customerName = await _db.Customers
+                .AsNoTracking()
+                .Where(c => c.Id == customerId && c.OrganizationId == organizationId)
+                .Select(c => c.Name)
+                .FirstOrDefaultAsync(cancellationToken);
+
+            customerBalanceMinor = await _customerLedger.BalanceAsync(
+                organizationId, customerId, cancellationToken);
+        }
+
+        return new SaleResponse
+        {
+            Id = sale.Id,
+            OrganizationId = sale.OrganizationId,
+            SaleNumber = sale.SaleNumber,
+            SaleDate = sale.SaleDate,
+            OccurredAt = sale.OccurredAt,
+            TotalMinor = sale.TotalMinor,
+            Status = sale.Status,
+            JournalEntryId = journalEntryId,
+            CustomerId = sale.CustomerId,
+            CustomerName = customerName,
             CustomerBalanceMinor = customerBalanceMinor
         };
     }
@@ -468,21 +572,19 @@ public class SalesController : ControllerBase
             .Where(p => p.OrganizationId == access.OrganizationId && p.SaleId == sale.Id)
             .ToListAsync(cancellationToken);
 
-        // Query 3 of 3: the lines, with each product's name and SKU joined
-        // on, so no name is fetched one at a time. UnitCostMinor is on the
-        // line and is deliberately not read: selling price only.
+        // Query 3 of 3: the lines. Name and SKU come from the line itself,
+        // as they were when sold, never from the product today: a renamed
+        // part must not change an old receipt. UnitCostMinor is on the line
+        // and is deliberately not read: selling price only.
         var lines = await (
             from line in _db.SaleLines.AsNoTracking()
-            join product in _db.Products.AsNoTracking()
-                on line.ProductId equals product.Id
             where line.OrganizationId == access.OrganizationId
-                && product.OrganizationId == access.OrganizationId
                 && line.SaleId == sale.Id
-            orderby product.Name
+            orderby line.ProductName
             select new SaleLineResponse
             {
-                ProductName = product.Name,
-                Sku = product.Sku,
+                ProductName = line.ProductName,
+                Sku = line.Sku,
                 Quantity = line.Quantity,
                 UnitPriceMinor = line.UnitPriceMinor
             })

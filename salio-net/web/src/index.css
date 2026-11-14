@@ -16,3 +16,141 @@
 body {
   margin: 0;
 }
+
+/*
+  Motion. All of it is here, so it can be read and cut in one place.
+
+  The rules it keeps:
+  - Nothing loops. A till runs all day; anything that repeats becomes a
+    distraction nobody can switch off. The one exception that cannot avoid
+    turning, the loading spinner, stops by itself after about ten seconds.
+  - Nothing delays a tap. Every animation here starts with the thing already
+    on screen and tappable: it fades or settles while the person can act.
+  - Nothing moves for anyone who has asked their device to reduce motion
+    (the block at the bottom). Things then simply appear.
+  - Colours come from the theme tokens, as everywhere else.
+*/
+
+/* ---- A press you can feel. Instant both ways: no transition at all, so
+   the button is already down when the finger lands. ---- */
+button:active:not(:disabled) {
+  scale: 0.98;
+}
+
+/* ---- A screen change: a fade, no slide. Opacity only, so nothing moves
+   and every button can be tapped from the first frame. ---- */
+@keyframes salio-fade-in {
+  from {
+    opacity: 0;
+  }
+}
+
+.motion-screen {
+  animation: salio-fade-in 150ms ease-out;
+}
+
+/* ---- A new line in the cart: slides down into its place, 150ms. The row
+   takes its full height at once, so nothing below it jumps twice. ---- */
+@keyframes salio-slide-in {
+  from {
+    opacity: 0;
+    translate: 0 -6px;
+  }
+}
+
+.motion-line-in {
+  animation: salio-slide-in 150ms ease-out;
+}
+
+/* ---- The total when it changes: the new number is there at once (never
+   counted up); only a soft green wash behind it fades away. ---- */
+@keyframes salio-highlight {
+  from {
+    background-color: var(--color-primary-soft);
+  }
+}
+
+.motion-highlight {
+  border-radius: 0.375rem;
+  animation: salio-highlight 600ms ease-out;
+}
+
+/* ---- Errors, warnings and "done" messages: slide in, 150ms. No shake, no
+   flash: a cashier mid-sale should not be startled. Every message box in
+   the till carries role="alert" or role="status", so this one rule covers
+   them all. ---- */
+@keyframes salio-arrive {
+  from {
+    opacity: 0;
+    translate: 0 -4px;
+  }
+}
+
+[role="alert"],
+[role="status"] {
+  animation: salio-arrive 150ms ease-out;
+}
+
+/* ---- A sale completes: the receipt rises into place (250ms) and a check
+   mark draws itself once (400ms, starting as the receipt settles). The
+   only flourish in the day: it is also the sign that the money landed. ---- */
+@keyframes salio-rise {
+  from {
+    opacity: 0;
+    translate: 0 24px;
+  }
+}
+
+.motion-rise {
+  animation: salio-rise 250ms ease-out;
+}
+
+/* The path is 24 units long. Drawn from nothing to whole; with motion
+   reduced it is simply whole. */
+@keyframes salio-draw {
+  from {
+    stroke-dashoffset: 24;
+  }
+}
+
+.motion-check {
+  stroke-dasharray: 24;
+  stroke-dashoffset: 0;
+  animation: salio-draw 400ms ease-out 150ms backwards;
+}
+
+/* ---- Loading: a plain ring before the words "Loading…". It turns for at
+   most about ten seconds (12 turns), then stops still: nothing loops. ---- */
+@keyframes salio-turn {
+  to {
+    rotate: 360deg;
+  }
+}
+
+.motion-loading::before {
+  content: "";
+  display: inline-block;
+  width: 1em;
+  height: 1em;
+  margin-right: 0.5em;
+  vertical-align: -0.15em;
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 9999px;
+  animation: salio-turn 800ms linear 12;
+}
+
+/* ---- "Reduce motion" switched on: no movement at all, anywhere. The
+   check mark is drawn whole and the spinner is a still ring. ---- */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation: none !important;
+    transition: none !important;
+  }
+
+  button:active:not(:disabled) {
+    scale: none;
+  }
+}

@@ -13,27 +13,31 @@
      needs one. */
   --color-*: initial;
 
-  /* Neutrals, warmed slightly (a hint of yellow, no blue) so the screen
-     doesn't look cold next to oily metal parts and cardboard boxes. */
-  --color-background: oklch(0.98 0.006 85); /* the page behind everything */
-  --color-surface: oklch(1 0 0); /* cards, rows, the bars */
-  --color-foreground: oklch(0.22 0.012 75); /* all main text, near black */
-  --color-muted-foreground: oklch(0.45 0.015 75); /* second lines. Still dark: 7:1 on white */
-  --color-border: oklch(0.85 0.012 80); /* quiet lines between rows */
-  --color-border-strong: oklch(0.65 0.02 80); /* outlines of things you tap: 3:1, visible in sun */
+  /* The agreed phone design. Neutrals warmed slightly (a hint of yellow,
+     no blue) so the screen doesn't look cold next to oily metal parts and
+     cardboard boxes. */
+  --color-background: #f6f4ed; /* the page behind everything */
+  --color-surface: #ffffff; /* cards, rows, the bars */
+  --color-foreground: #191814; /* all main text, near black */
+  --color-muted-foreground: #57534a; /* second lines, inactive tabs. 7.7:1 on white */
+  --color-border: #e2dfd4; /* quiet lines between rows */
+  --color-border-strong: #b9b3a3; /* outlines of things you tap: 2.1:1 on white */
 
-  /* Deep, desaturated forest green. Dark enough that white text on it
-     stays readable outdoors. */
-  --color-primary: oklch(0.45 0.09 158);
-  --color-primary-foreground: oklch(0.99 0 0);
-  --color-primary-soft: oklch(0.95 0.03 158); /* quiet green fill, for the shelf chip */
+  /* Deep forest green. White text on it is 9:1, readable outdoors. */
+  --color-primary: #15503a;
+  --color-primary-foreground: oklch(0.99 0 0); /* not in the design list: kept */
+  --color-primary-fill: #1c6248; /* a darker green panel inside a green area */
+  --color-primary-foreground-muted: #9fc4b2; /* quiet text on green */
+  --color-primary-foreground-soft: #c3dace; /* second lines on green */
+  --color-primary-soft: #e6eee9; /* green tint: the shelf chip, a pressed row */
 
   /* Amber says "look at this": low or no stock. Never used for errors. */
-  --color-warning: oklch(0.78 0.15 75); /* a fill: badges */
-  --color-warning-foreground: oklch(0.25 0.04 70); /* dark text on that fill */
-  --color-warning-strong: oklch(0.52 0.13 70); /* amber as text on white, still 4.5:1 */
+  --color-warning: #fbe9c8; /* a fill: badges */
+  --color-warning-foreground: #8a4b08; /* text on that fill: 5.7:1 */
+  --color-warning-strong: #8a4b08; /* amber as text on white: 6.8:1 */
 
-  /* Red is reserved for things that went wrong. */
+  /* Red is reserved for things that went wrong. Not in the design list:
+     kept as it was. */
   --color-error: oklch(0.48 0.19 27);
   --color-error-foreground: oklch(0.99 0 0);
 
@@ -56,4 +60,32 @@
      changes. Put font-money on every currency value. */
   --font-money: system-ui, "Segoe UI", Roboto, sans-serif;
   --font-money--font-feature-settings: "tnum";
+}
+
+/* Salio loader */
+@keyframes salio-wave {
+  0%, 60%, 100% { transform: translateY(0); }
+  30% { transform: translateY(-120px); }
+}
+@keyframes salio-hop {
+  0%, 15% { transform: translateY(0) scale(1, 1); animation-timing-function: cubic-bezier(.2, .7, .4, 1); }
+  45% { transform: translateY(-420px) scale(1, 1); animation-timing-function: cubic-bezier(.6, 0, .8, .4); }
+  68% { transform: translateY(0) scale(1, 1); }
+  74% { transform: translateY(0) scale(1.35, .65); }
+  84% { transform: translateY(0) scale(.92, 1.08); }
+  92%, 100% { transform: translateY(0) scale(1, 1); }
+}
+.salio-animated .salio-letter { animation: salio-wave 1.8s ease-in-out infinite; }
+.salio-animated .salio-letter:nth-child(2) { animation-delay: .12s; }
+.salio-animated .salio-letter:nth-child(3) { animation-delay: .24s; }
+.salio-animated .salio-letter:nth-child(4) { animation-delay: .36s; }
+.salio-animated .salio-letter:nth-child(5) { animation-delay: .48s; }
+.salio-animated .salio-dot {
+  transform-box: fill-box;
+  transform-origin: 50% 100%;
+  animation: salio-hop 1.8s infinite;
+  animation-delay: .36s;
+}
+@media (prefers-reduced-motion: reduce) {
+  .salio-animated .salio-letter, .salio-animated .salio-dot { animation: none; }
 }

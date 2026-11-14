@@ -1,0 +1,10 @@
+# These files run or are read on Linux. A Windows line ending breaks them
+# ("bad interpreter", or Caddy refusing its config), so they stay LF
+# whatever machine checks them out.
+*.sh text eol=lf
+*.caddy text eol=lf
+Caddyfile text eol=lf
+.env.example text eol=lf
+docker-compose.yml text eol=lf
+Dockerfile text eol=lf
+*.conf text eol=lf

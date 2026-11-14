@@ -1,5 +1,8 @@
 import { useState, useEffect, useRef } from "react";
 import { API, kes, paymentName } from "./auth";
+import SalioLoader from "./SalioLoader";
+import useShowLoader from "./useShowLoader";
+import { apiFetch, problemText } from "./api";
 
 // From GET /api/accounts. accountClass is the server's number:
 // 2 = Equity, 4 = Expense.
@@ -44,33 +47,7 @@ function dayLabel(day: string) {
   });
 }
 
-// The server's own words for a refusal: "detail" is written for a person.
-async function refusalText(response: Response) {
-  try {
-    const problem = await response.json();
-
-    if (typeof problem.detail === "string" && problem.detail !== "") {
-      return problem.detail;
-    }
-
-    if (problem.errors) {
-      const first = Object.values(problem.errors).flat()[0];
-      if (typeof first === "string") {
-        return first;
-      }
-    }
-
-    if (typeof problem.title === "string") {
-      return problem.title;
-    }
-  } catch {
-    // Not JSON: fall through.
-  }
-
-  return "The server refused it.";
-}
-
-const NO_CONNECTION = "Could not reach the till server. Nothing was saved. Check the connection and try again.";
+const NO_CONNECTION = "Can't reach Salio";
 
 export default function ExpensesScreen({
   shopId,
@@ -122,7 +99,7 @@ export default function ExpensesScreen({
   useEffect(() => {
     let cancelled = false;
 
-    fetch(`${API}/api/accounts?organizationId=${shopId}`, { credentials: "include" })
+    apiFetch(`${API}/api/accounts?organizationId=${shopId}`, { credentials: "include" })
       .then(async (response) => {
         if (cancelled) return;
         if (response.status === 401) {
@@ -130,13 +107,13 @@ export default function ExpensesScreen({
           return;
         }
         if (!response.ok) {
-          setAccountsProblem(await refusalText(response));
+          setAccountsProblem(await problemText(response));
           return;
         }
         setAccounts(await response.json());
       })
       .catch(() => {
-        if (!cancelled) setAccountsProblem("Could not reach the till server.");
+        if (!cancelled) setAccountsProblem("Can't reach Salio.");
       });
 
     return () => {
@@ -148,7 +125,7 @@ export default function ExpensesScreen({
   useEffect(() => {
     let cancelled = false;
 
-    fetch(`${API}/api/expenses?organizationId=${shopId}&from=${period.from}&to=${period.to}`, {
+    apiFetch(`${API}/api/expenses?organizationId=${shopId}&from=${period.from}&to=${period.to}`, {
       credentials: "include",
     })
       .then(async (response) => {
@@ -158,13 +135,13 @@ export default function ExpensesScreen({
           return;
         }
         if (!response.ok) {
-          setEntriesProblem(await refusalText(response));
+          setEntriesProblem(await problemText(response));
           return;
         }
         setEntries(await response.json());
       })
       .catch(() => {
-        if (!cancelled) setEntriesProblem("Could not reach the till server.");
+        if (!cancelled) setEntriesProblem("Can't reach Salio.");
       });
 
     return () => {
@@ -209,11 +186,11 @@ export default function ExpensesScreen({
     }
 
     if (chosen === undefined) {
-      setProblem("Choose what the money was for.");
+      setProblem("Choose a category.");
       return;
     }
     if (!(amountMinor > 0)) {
-      setProblem("Type an amount more than zero.");
+      setProblem("Amount must be more than 0.");
       return;
     }
     if (paidFrom === null) {
@@ -227,7 +204,7 @@ export default function ExpensesScreen({
     setSaved("");
 
     try {
-      const response = await fetch(`${API}/api/expenses`, {
+      const response = await apiFetch(`${API}/api/expenses`, {
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
@@ -248,7 +225,7 @@ export default function ExpensesScreen({
 
       if (!response.ok) {
         // Everything typed stays, so nothing has to be entered again.
-        setProblem(await refusalText(response));
+        setProblem(await problemText(response));
         return;
       }
 
@@ -270,7 +247,7 @@ export default function ExpensesScreen({
 
   async function addCategory() {
     if (newName.trim() === "") {
-      setAddProblem("Type a name for the category.");
+      setAddProblem("Type a category name.");
       return;
     }
 
@@ -278,7 +255,7 @@ export default function ExpensesScreen({
     setAddProblem("");
 
     try {
-      const response = await fetch(`${API}/api/accounts`, {
+      const response = await apiFetch(`${API}/api/accounts`, {
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
@@ -292,7 +269,7 @@ export default function ExpensesScreen({
 
       if (!response.ok) {
         // The typed name stays, so it can be corrected.
-        setAddProblem(await refusalText(response));
+        setAddProblem(await problemText(response));
         return;
       }
 
@@ -302,11 +279,14 @@ export default function ExpensesScreen({
       setAdding(false);
       setNewName("");
     } catch {
-      setAddProblem("Could not reach the till server. The category was not added.");
+      setAddProblem("Can't reach Salio. Category not added.");
     } finally {
       setAddBusy(false);
     }
   }
+
+  const showAccountsLoading = useShowLoader(accounts === null && accountsProblem === "");
+  const showEntriesLoading = useShowLoader(entries === null && entriesProblem === "");
 
   function categoryButton(account: Account) {
     const selected = account.id === accountId;
@@ -329,13 +309,13 @@ export default function ExpensesScreen({
   }
 
   return (
-    <div className="flex h-dvh flex-col bg-background text-foreground">
+    <div className="flex h-full flex-col bg-background text-foreground">
       <div className="flex shrink-0 items-center gap-2 border-b border-border bg-surface px-2 py-1.5">
         <button
           onClick={onBack}
-          className="min-h-12 rounded-lg border-2 border-border-strong px-4 text-base font-bold"
+          className="min-h-12 rounded-lg border-2 border-border-strong px-4 text-base font-bold md:hidden"
         >
-          ‹ Till
+          ‹ More
         </button>
         <span className="text-xl font-bold">Money out</span>
       </div>
@@ -346,8 +326,8 @@ export default function ExpensesScreen({
           <div>
             <h2 className="mb-2 text-xl font-bold">What was it for?</h2>
 
-            {accounts === null && accountsProblem === "" && (
-              <p className="text-lg">Loading categories…</p>
+            {accounts === null && accountsProblem === "" && showAccountsLoading && (
+              <SalioLoader size="inline" message="Loading categories…" />
             )}
 
             {accountsProblem !== "" && (
@@ -388,8 +368,8 @@ export default function ExpensesScreen({
                 {/* A new category, without leaving the screen. */}
                 {adding && (
                   <div className="mt-2 rounded-xl border-2 border-primary p-3">
-                    <label className="block text-base font-semibold">
-                      New category name
+                    <label className="block text-base md:text-sm font-semibold">
+                      Category name
                       <input
                         value={newName}
                         onChange={(e) => {
@@ -446,7 +426,7 @@ export default function ExpensesScreen({
                       }
                     >
                       <span className="block text-lg font-bold">Drawings</span>
-                      <span className="block text-base">Money taken out </span>
+                      <span className="block text-base">Money taken out</span>
                     </button>
                   </>
                 )}
@@ -455,7 +435,7 @@ export default function ExpensesScreen({
           </div>
 
           {/* 2. How much. */}
-          <label className="block text-xl font-bold">
+          <label className="block text-xl md:text-base font-bold">
             Amount (KES)
             <input
               type="number"
@@ -500,7 +480,7 @@ export default function ExpensesScreen({
           </div>
 
           <div className="grid grid-cols-1 gap-3">
-            <label className="block text-base font-semibold">
+            <label className="block text-base md:text-sm font-semibold">
               Date
               <input
                 type="date"
@@ -511,7 +491,7 @@ export default function ExpensesScreen({
                   focus:border-primary focus:outline-none"
               />
             </label>
-            <label className="block text-base font-semibold">
+            <label className="block text-base md:text-sm font-semibold">
               Note (optional)
               <input
                 value={note}
@@ -564,8 +544,8 @@ export default function ExpensesScreen({
             </div>
           </div>
 
-          {entries === null && entriesProblem === "" && (
-            <p className="px-3 pb-3 text-lg">Loading…</p>
+          {entries === null && entriesProblem === "" && showEntriesLoading && (
+            <SalioLoader size="inline" message="Loading money out…" />
           )}
 
           {entriesProblem !== "" && (
@@ -581,7 +561,7 @@ export default function ExpensesScreen({
           )}
 
           {entries !== null && entries.length === 0 && (
-            <p className="px-3 pb-3 text-lg">Nothing paid out yet this month.</p>
+            <p className="px-3 pb-3 text-lg">Nothing paid out this month.</p>
           )}
 
           {(entries ?? []).map((entry) => (

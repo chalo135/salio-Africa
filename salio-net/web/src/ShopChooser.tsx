@@ -10,7 +10,7 @@ export default function ShopChooser({
   onChoose: (organizationId: string) => void;
 }) {
   return (
-    <div className="flex min-h-dvh flex-col justify-center bg-background px-4 text-foreground">
+    <div className="flex min-h-full flex-col justify-center bg-background px-4 text-foreground">
       <div className="mx-auto w-full max-w-sm">
         <h1 className="mb-6 text-2xl font-bold">Which shop?</h1>
 

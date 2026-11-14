@@ -10,4 +10,8 @@ public class SignedInUserResponse
     public string FullName { get; set; } = string.Empty;
 
     public List<ShopMembershipResponse> Shops { get; set; } = new();
+
+    // True until the person replaces the temporary password an Owner gave
+    // them. The till shows nothing but "choose your password" until then.
+    public bool MustChangePassword { get; set; }
 }

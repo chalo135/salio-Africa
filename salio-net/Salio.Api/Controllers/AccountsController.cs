@@ -202,8 +202,9 @@ public class AccountsController : ControllerBase
 
         // Cash, Sales, Inventory and the rest are what sales and deliveries
         // post to; switching one off would stop the till. 5000 is written by
-        // every sale. Only spending categories may be switched off.
-        if (account.AccountClass != AccountClass.Expense || account.Code == "5000")
+        // every sale, and 5700 by every stock count. Only spending categories
+        // may be switched off.
+        if (account.AccountClass != AccountClass.Expense || account.Code == "5000" || account.Code == "5700")
         {
             return BadRequest(Rejected(account.Name + " is part of how the shop works and cannot be switched off"));
         }

@@ -1,0 +1,23 @@
+# Kept out of every image built from salio-net/.
+# .env holds the database password: it must never reach an image.
+.env
+.env.*
+**/.env
+**/.env.*
+.git/
+**/bin/
+**/obj/
+**/.vs/
+**/*.user
+# Uploaded invoices and database dumps are data, not code.
+**/App_Data/
+*.dump
+*.tar
+*.tar.gz
+backups/
+Salio.Tests/
+web/
+deploy/
+claude/
+*.sql
+*.md

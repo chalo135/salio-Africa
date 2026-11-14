@@ -316,21 +316,22 @@ public class ReportService
             }
         }
 
+        // Names as they were sold that day, read from the lines, so an old
+        // day sheet does not change when a part is renamed. A part renamed
+        // during the day shows as two rows, one per name: that is what the
+        // receipts say.
         var topProducts = await (
             from saleLine in _db.SaleLines.AsNoTracking()
             join sale in _db.Sales.AsNoTracking()
                 on saleLine.SaleId equals sale.Id
-            join product in _db.Products.AsNoTracking()
-                on saleLine.ProductId equals product.Id
             where saleLine.OrganizationId == organizationId
                 && sale.OrganizationId == organizationId
-                && product.OrganizationId == organizationId
                 && sale.SaleDate == date
             group saleLine by new
             {
-                product.Id,
-                product.Sku,
-                product.Name
+                Id = saleLine.ProductId,
+                saleLine.Sku,
+                Name = saleLine.ProductName
             }
             into grouped
             orderby grouped.Sum(l => l.Quantity) descending

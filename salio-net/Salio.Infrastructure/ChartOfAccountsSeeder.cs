@@ -41,6 +41,10 @@ namespace Salio.Infrastructure
                 NewAccount(organizationId, "5400", "Wages - Casual", AccountClass.Expense),
                 NewAccount(organizationId, "5500", "Transport", AccountClass.Expense),
                 NewAccount(organizationId, "5600", "Bank and M-Pesa Charges", AccountClass.Expense),
+
+                // Stock that a count found missing (or, credited, found extra).
+                // Written only by a stock count, never as money out.
+                NewAccount(organizationId, "5700", "Stock Loss", AccountClass.Expense),
                 NewAccount(organizationId, "5900", "Other", AccountClass.Expense)
             };
 

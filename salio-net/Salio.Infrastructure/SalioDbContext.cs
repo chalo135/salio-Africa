@@ -24,7 +24,14 @@ public class SalioDbContext : DbContext
     public DbSet<FiledReturn> FiledReturns => Set<FiledReturn>();
     public DbSet<AppUser> AppUsers => Set<AppUser>();
     public DbSet<Membership> Memberships => Set<Membership>();
+    public DbSet<TrustedDevice> TrustedDevices => Set<TrustedDevice>();
     public DbSet<Customer> Customers => Set<Customer>();
+    public DbSet<SetupCode> SetupCodes => Set<SetupCode>();
+    public DbSet<AdminAuditLog> AdminAuditLogs => Set<AdminAuditLog>();
+    public DbSet<ImportBatch> ImportBatches => Set<ImportBatch>();
+    public DbSet<ImportBatchChange> ImportBatchChanges => Set<ImportBatchChange>();
+    public DbSet<SupplierInvoice> SupplierInvoices => Set<SupplierInvoice>();
+    public DbSet<SupplierInvoiceLine> SupplierInvoiceLines => Set<SupplierInvoiceLine>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

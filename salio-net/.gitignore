@@ -480,3 +480,7 @@ $RECYCLE.BIN/
 
 # Vim temporary swap files
 *.swp
+.Claude.md
+.Build_Log.md
+# Uploaded supplier invoices (D10). Never in the repository.
+App_Data/

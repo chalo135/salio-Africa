@@ -27,6 +27,7 @@ export default function Receipt({
   soldBy,
   customerName,
   customerBalanceMinor,
+  justSold = false,
   onDone,
 }: {
   shopName: string;
@@ -42,6 +43,10 @@ export default function Receipt({
   // The balance is only known straight after the sale, at the till.
   customerName?: string | null;
   customerBalanceMinor?: number | null;
+  // Straight after a sale at the till, not a past sale opened from the list:
+  // the receipt rises into place and a check mark draws once, the sign that
+  // the money landed.
+  justSold?: boolean;
   onDone: () => void;
 }) {
   const when = new Date(occurredAt).toLocaleString("en-KE", {
@@ -55,8 +60,26 @@ export default function Receipt({
   });
 
   return (
-    <div className="flex h-dvh flex-col bg-background text-foreground">
+    <div className={"flex h-full flex-col bg-background text-foreground" + (justSold ? " motion-rise" : "")}>
       <header className="shrink-0 border-b-2 border-border bg-surface px-4 py-4 text-center">
+        {justSold && (
+          <svg
+            width="40"
+            height="40"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2.5"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            className="mx-auto mb-2 text-primary"
+            role="img"
+            aria-label="Sale saved"
+          >
+            <circle cx="12" cy="12" r="10.5" strokeWidth="1.5" />
+            <path className="motion-check" d="M7 12.5l3.5 3.5L17 9" />
+          </svg>
+        )}
         <p className="text-xl font-bold">{shopName}</p>
         <p className="mt-1 font-money text-lg font-bold">{saleNumber}</p>
         <p className="mt-1 font-money text-base">{when}</p>
@@ -104,7 +127,7 @@ export default function Receipt({
             <p className="text-lg">Owed by {customerName}</p>
             {customerBalanceMinor != null && (
               <div className="mt-1 flex items-baseline justify-between">
-                <span className="text-lg font-semibold">Now owes in total</span>
+                <span className="text-lg font-semibold">Total owed</span>
                 <span className="font-money text-xl font-bold">KES {kes(customerBalanceMinor)}</span>
               </div>
             )}

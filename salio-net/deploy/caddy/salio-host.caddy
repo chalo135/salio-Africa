@@ -1,0 +1,18 @@
+# Path B: the Caddy that ALREADY runs on the server (for the other site)
+# also serves Salio. Installed by the commands in deploy/DEPLOY.md
+# ("Path B: add Salio to the server's Caddy"), which copy this file and
+# salio-rules.caddy to /etc/caddy/sites/, replace SALIO_DOMAIN_GOES_HERE
+# with SALIO_DOMAIN from .env, and add one line to the main Caddyfile:
+#   import /etc/caddy/sites/salio-host.caddy
+#
+# It names only Salio's own hostname, so it cannot take requests meant for
+# the other site. The two ports are SALIO_API_PORT and SALIO_WEB_PORT in
+# .env (127.0.0.1 only).
+#
+# The rules themselves are in salio-rules.caddy, shared with Path A.
+
+import salio-rules.caddy
+
+SALIO_DOMAIN_GOES_HERE {
+	import salio_site 127.0.0.1:18080 127.0.0.1:18081
+}

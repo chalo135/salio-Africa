@@ -1,5 +1,8 @@
 import { useState, useRef } from "react";
 import { API, kes, qty } from "./auth";
+import PaidWithChoice from "./PaidWithChoice";
+import { paidWithLabel } from "./paidWith";
+import { apiFetch, problemText } from "./api";
 
 // What this screen needs to know about a product. The till loads the shelf;
 // this screen searches the same list.
@@ -21,14 +24,6 @@ type ReceiptLine = {
   quantityText: string;
   costText: string; // shillings, as typed: "1050" means KES 1,050.00
 };
-
-// The server's PaymentMethod numbers. Not 0, 1, 2: 2 is Card, which a
-// supplier is never paid with, so Credit is 3.
-const PAID_WITH = [
-  { value: 0, label: "Cash" },
-  { value: 1, label: "M-Pesa" },
-  { value: 3, label: "Credit" },
-];
 
 // Today as the shop counts it, from the phone's clock. Not toISOString,
 // which is UTC and would call anything before 3am yesterday.
@@ -53,41 +48,21 @@ function lineTotalMinor(line: ReceiptLine) {
   return Math.round(quantityOf(line) * costMinorOf(line));
 }
 
-// The server's own words for a refusal: "detail" is written for a person.
-async function refusalText(response: Response) {
-  try {
-    const problem = await response.json();
-
-    if (typeof problem.detail === "string" && problem.detail !== "") {
-      return problem.detail;
-    }
-
-    if (problem.errors) {
-      const first = Object.values(problem.errors).flat()[0];
-      if (typeof first === "string") {
-        return first;
-      }
-    }
-
-    if (typeof problem.title === "string") {
-      return problem.title;
-    }
-  } catch {
-    // Not JSON: fall through.
-  }
-
-  return "The server refused this delivery.";
-}
-
 export default function StockInScreen({
   shopId,
   products,
+  startWith,
+  backLabel = "More",
   onBack,
   onReceived,
   onExpired,
 }: {
   shopId: string;
   products: Product[];
+  // Opened from "Parts needing a cost": that part is already on the delivery.
+  startWith?: Product;
+  // Where the back button goes, in words. "More" unless opened from elsewhere.
+  backLabel?: string;
   onBack: () => void;
   onReceived: () => void; // reloads the shelf
   onExpired: () => void;
@@ -100,7 +75,20 @@ export default function StockInScreen({
   const [supplierName, setSupplierName] = useState("");
 
   const [search, setSearch] = useState("");
-  const [lines, setLines] = useState<ReceiptLine[]>([]);
+  const [lines, setLines] = useState<ReceiptLine[]>(() =>
+    startWith
+      ? [
+          {
+            productId: startWith.id,
+            name: startWith.name,
+            sku: startWith.sku,
+            sellPriceMinor: startWith.sellPriceMinor,
+            quantityText: "",
+            costText: "",
+          },
+        ]
+      : [],
+  );
 
   const [saving, setSaving] = useState(false);
 
@@ -161,7 +149,7 @@ export default function StockInScreen({
   // typing mistake: an empty box, or a cost forgotten.
   function checkBeforeSending() {
     if (paidWith === null) {
-      return "Choose how the supplier was paid.";
+      return "Choose how you paid";
     }
 
     for (let i = 0; i < lines.length; i++) {
@@ -169,11 +157,11 @@ export default function StockInScreen({
       const label = `Line ${i + 1} (${line.name})`;
 
       if (!(quantityOf(line) > 0)) {
-        return `${label}: the quantity must be more than zero.`;
+        return `${label}: quantity must be above zero`;
       }
 
       if (!(costMinorOf(line) > 0)) {
-        return `${label}: the unit cost must be more than zero.`;
+        return `${label}: cost must be above zero`;
       }
     }
 
@@ -210,7 +198,7 @@ export default function StockInScreen({
     };
 
     try {
-      const response = await fetch(`${API}/api/stock-receipts`, {
+      const response = await apiFetch(`${API}/api/stock-receipts`, {
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
@@ -224,14 +212,14 @@ export default function StockInScreen({
 
       if (!response.ok) {
         // Keep every typed line, so nothing has to be entered again.
-        setProblem(await refusalText(response));
+        setProblem(await problemText(response));
         return;
       }
 
       const result: { totalCostMinor: number } = await response.json();
 
       const items = lines.map((line) => `${qty(quantityOf(line))} × ${line.name}`).join(", ");
-      const how = PAID_WITH.find((p) => p.value === paidWith)?.label;
+      const how = paidWithLabel(paidWith);
       const from = body.supplierName ? ` from ${body.supplierName}` : "";
       setReceived(`Received ${items}${from}. KES ${kes(result.totalCostMinor)}, ${how}.`);
 
@@ -242,7 +230,7 @@ export default function StockInScreen({
       // Same as after a sale: the shelf catches up behind, not awaited.
       onReceived();
     } catch {
-      setProblem("Could not reach the till server. Nothing was saved. Check the connection and try again.");
+      setProblem("Can't reach Salio");
     } finally {
       savingNow.current = false;
       setSaving(false);
@@ -250,13 +238,13 @@ export default function StockInScreen({
   }
 
   return (
-    <div className="flex h-dvh flex-col bg-background text-foreground">
+    <div className="flex h-full flex-col bg-background text-foreground">
       <div className="flex shrink-0 items-center gap-2 border-b border-border bg-surface px-2 py-1.5">
         <button
           onClick={onBack}
-          className="min-h-11 rounded-lg border-2 border-border-strong px-3 text-sm font-bold"
+          className="min-h-11 rounded-lg border-2 border-border-strong px-3 text-sm font-bold md:hidden"
         >
-          ‹ Till
+          ‹ {backLabel}
         </button>
         <span className="text-base font-bold">Stock in</span>
       </div>
@@ -264,6 +252,7 @@ export default function StockInScreen({
       <main className="min-h-0 flex-1 overflow-y-auto">
         {/* The delivery: when, how it was paid, who from. */}
         <section className="space-y-3 border-b border-border bg-surface p-3">
+          <p className="text-base">Stock that has arrived since. You paid, or you owe.</p>
           <label className="block text-sm font-semibold">
             Date received
             <input
@@ -276,30 +265,13 @@ export default function StockInScreen({
             />
           </label>
 
-          <div>
-            <span className="block text-sm font-semibold">Paid with</span>
-            <div className="mt-1 grid grid-cols-3 gap-1.5">
-              {PAID_WITH.map((option) => (
-                <button
-                  key={option.value}
-                  type="button"
-                  onClick={() => {
-                    setPaidWith(option.value);
-                    setProblem("");
-                  }}
-                  aria-pressed={paidWith === option.value}
-                  className={
-                    "min-h-12 rounded-lg text-base font-bold " +
-                    (paidWith === option.value
-                      ? "bg-primary text-primary-foreground"
-                      : "border-2 border-border-strong bg-surface text-foreground")
-                  }
-                >
-                  {option.label}
-                </button>
-              ))}
-            </div>
-          </div>
+          <PaidWithChoice
+            value={paidWith}
+            onChange={(value) => {
+              setPaidWith(value);
+              setProblem("");
+            }}
+          />
 
           <label className="block text-sm font-semibold">
             Supplier (optional)
@@ -307,7 +279,6 @@ export default function StockInScreen({
               value={supplierName}
               onChange={(e) => setSupplierName(e.target.value)}
               maxLength={200}
-              placeholder="Who delivered it"
               className="mt-1 h-12 w-full rounded-lg border-2 border-border-strong bg-surface px-3 text-base
                 placeholder:text-muted-foreground focus:border-primary focus:outline-none"
             />
@@ -319,7 +290,7 @@ export default function StockInScreen({
           <input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Add a product: name or SKU"
+            placeholder="Search"
             className="h-12 w-full rounded-lg border-2 border-border-strong bg-surface px-3 text-lg
               placeholder:text-muted-foreground focus:border-primary focus:outline-none"
           />
@@ -341,7 +312,7 @@ export default function StockInScreen({
         ))}
 
         {q !== "" && matches.length === 0 && (
-          <p className="p-3 text-base text-muted-foreground">No part matches that.</p>
+          <p className="p-3 text-base md:text-sm text-muted-foreground">No match.</p>
         )}
 
         {/* The lines of the delivery. */}
@@ -378,12 +349,13 @@ export default function StockInScreen({
                     min="0"
                     step="any"
                     value={line.quantityText}
+                    autoFocus={startWith !== undefined && line.productId === startWith.id}
                     onChange={(e) => updateLine(index, { quantityText: e.target.value })}
                     className="mt-0.5 h-11 w-full rounded-lg border-2 border-border-strong px-2 text-center font-money text-base"
                   />
                 </label>
                 <label className="min-w-0 flex-1 text-sm font-semibold">
-                  Unit cost (KES)
+                  Cost (KES)
                   <input
                     type="number"
                     inputMode="decimal"
@@ -403,7 +375,7 @@ export default function StockInScreen({
                   clearing stock at a loss on purpose. */}
               {dearerThanPrice && (
                 <p className="mt-1 text-sm font-semibold text-warning-strong">
-                  Costs more than it sells for (sells at KES {kes(line.sellPriceMinor)})
+                  Costs more than its price
                 </p>
               )}
             </div>
@@ -411,8 +383,8 @@ export default function StockInScreen({
         })}
 
         {lines.length === 0 && q === "" && received === "" && (
-          <p className="p-4 text-base text-muted-foreground">
-            Search above to add the first product in this delivery.
+          <p className="p-4 text-base md:text-sm text-muted-foreground">
+            Nothing added yet.
           </p>
         )}
       </main>

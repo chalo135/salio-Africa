@@ -1,19 +1,30 @@
 import { useState } from "react";
-import { API, type SignedInUser } from "./auth";
+import { API, type LoginResult } from "./auth";
+import SalioLoader from "./SalioLoader";
+import useShowLoader from "./useShowLoader";
+import { apiFetch, problemText, CANT_REACH } from "./api";
 
 export default function LoginScreen({
+  message = "",
+  locked = false,
   onSignedIn,
-  onCreateShop,
 }: {
-  onSignedIn: (user: SignedInUser) => void;
-  // Only passed in development, so this link cannot exist in a real build.
-  onCreateShop?: () => void;
+  // Why the person is here, for example after too many wrong PINs.
+  message?: string;
+  // True when this is the lock screen on a phone with no PIN: the till and
+  // its carts are kept behind it.
+  locked?: boolean;
+  onSignedIn: (user: LoginResult) => void;
 }) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
-  const [problem, setProblem] = useState("");
+  const [problem, setProblem] = useState(message);
   const [busy, setBusy] = useState(false);
+
+  // Covers the form while the sign-in is waiting. The form stays underneath,
+  // so a refused sign-in shows its error with the email still typed.
+  const showSigningIn = useShowLoader(busy);
 
   async function signIn(event: React.FormEvent) {
     event.preventDefault();
@@ -21,12 +32,17 @@ export default function LoginScreen({
     setProblem("");
 
     try {
-      const response = await fetch(`${API}/api/auth/login`, {
-        method: "POST",
-        credentials: "include", // stores the login cookie
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, password }),
-      });
+      const response = await apiFetch(
+        `${API}/api/auth/login`,
+        {
+          method: "POST",
+          credentials: "include", // stores the login cookie
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ email, password }),
+        },
+        // Give up after 20 seconds rather than spin for ever.
+        20000,
+      );
 
       if (response.ok) {
         onSignedIn(await response.json());
@@ -35,19 +51,27 @@ export default function LoginScreen({
 
       // The server says the same thing for a wrong email and a wrong
       // password on purpose. Show it as it came.
-      const body = await response.json().catch(() => null);
-      setProblem(body?.detail ?? "Could not sign in.");
+      setProblem(await problemText(response, "Couldn't sign in"));
     } catch {
-      setProblem("Could not reach the till server. Is the API running?");
+      setProblem(CANT_REACH);
     } finally {
       setBusy(false);
     }
   }
 
   return (
-    <div className="flex min-h-dvh flex-col justify-center bg-background px-4 text-foreground">
+    <div className="flex min-h-full flex-col justify-center bg-background px-4 text-foreground">
+      {showSigningIn && <SalioLoader size="full" message="Signing in…" />}
+
       <form onSubmit={signIn} className="mx-auto w-full max-w-sm">
-        <h1 className="mb-6 text-2xl font-bold">Salio</h1>
+        <h1 className={locked ? "text-2xl font-bold" : "mb-6 text-2xl font-bold"}>
+          {locked ? "Locked" : "Sign in"}
+        </h1>
+        {locked && (
+          <p className="mb-6 mt-1 text-base text-muted-foreground">
+            Your carts are kept
+          </p>
+        )}
 
         <label className="mb-1 block text-sm font-semibold" htmlFor="email">
           Email
@@ -105,15 +129,13 @@ export default function LoginScreen({
           {busy ? "Signing in…" : "Sign in"}
         </button>
 
-        {onCreateShop !== undefined && (
-          <button
-            type="button"
-            onClick={onCreateShop}
-            className="mt-3 min-h-11 w-full rounded-lg border-2 border-border-strong
-              text-base font-bold"
-          >
-            Create a shop (dev)
-          </button>
+        {/* Sign in first, always. A new shop is set up from the setup link
+            the owner was sent (it carries the code), so this is one quiet
+            line, not a button. Not shown on the lock screen. */}
+        {!locked && (
+          <p className="mt-4 text-center text-sm text-muted-foreground">
+            New shop? Use your link.
+          </p>
         )}
       </form>
     </div>

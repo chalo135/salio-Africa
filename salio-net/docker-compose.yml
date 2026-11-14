@@ -1,0 +1,241 @@
+# Salio on the VPS: Postgres, the API, the till, and (optionally) Caddy.
+# The runbook is deploy/DEPLOY.md. Follow it; do not improvise from this file.
+#
+# The machine also runs a live client site. Everything here is fenced off
+# from it:
+#   - every service has a hard memory limit, and swap counts inside it
+#     (memswap_limit = mem_limit means "no swap on top")
+#   - oom_score_adj makes the kernel pick Salio first if the whole machine
+#     ever runs out of memory, never the client site
+#   - every service has a CPU ceiling and a process-count ceiling
+#   - Salio has its own network, and joins no other
+#   - Postgres is not published at all; the API and till are published on
+#     127.0.0.1 only; the only public listener is Caddy, and only when the
+#     "caddy" profile is switched on (Path A in the runbook)
+#   - container logs are capped, so they cannot fill the disk
+#
+# Two ways to reach it from the internet (deploy/DEPLOY.md, step 2):
+#   Path A  nothing on the server owns ports 80/443 yet:
+#           COMPOSE_PROFILES=caddy in .env starts the caddy service below.
+#   Path B  a Caddy already runs on the server for the other site:
+#           leave COMPOSE_PROFILES empty; that Caddy forwards to the
+#           127.0.0.1 ports (deploy/caddy/salio-host.caddy).
+#
+# Secrets come from .env next to this file (gitignored). See .env.example.
+
+name: salio
+
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: salio
+      POSTGRES_USER: salio
+      # Only read the FIRST time the pgdata volume is created. Changing it
+      # later does nothing by itself: see "Changing the database password"
+      # in deploy/DEPLOY.md.
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+    # Sized for the memory limit: shared memory well under it, and few
+    # enough connections that each one's working memory cannot add up past it.
+    command:
+      - postgres
+      - -c
+      - shared_buffers=128MB
+      - -c
+      - effective_cache_size=384MB
+      - -c
+      - work_mem=4MB
+      - -c
+      - maintenance_work_mem=64MB
+      - -c
+      - max_connections=40
+    shm_size: 128m
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      # Read-only view of the uploaded invoices, so deploy/backup.sh can
+      # archive them from this container. Postgres itself never touches it.
+      - invoices:/invoices:ro
+    networks:
+      - salio
+    # No "ports:" on purpose. Postgres is reachable only by the API and the
+    # migrate job, over Salio's own network.
+    mem_limit: ${SALIO_DB_MEM:-1g}
+    memswap_limit: ${SALIO_DB_MEM:-1g}
+    oom_score_adj: 500
+    cpus: 1.0
+    pids_limit: 200
+    stop_grace_period: 60s
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U salio -d salio"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    logging: *logging
+
+  # Applies migrations, then exits. Not started by "up": run it on purpose,
+  # once per release, AFTER a backup, with:
+  #   docker compose run --rm migrate
+  migrate:
+    image: salio-migrate:${SALIO_VERSION:?Set SALIO_VERSION in .env}
+    build:
+      context: .
+      dockerfile: Salio.Api/Dockerfile
+      target: migrate
+    pull_policy: never
+    profiles: ["tools"]
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      ConnectionStrings__Default: "Host=db;Port=5432;Database=salio;Username=salio;Password=${POSTGRES_PASSWORD}"
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - salio
+    mem_limit: 512m
+    memswap_limit: 512m
+    oom_score_adj: 500
+    cpus: 1.0
+    pids_limit: 200
+    cap_drop: ["ALL"]
+    security_opt: ["no-new-privileges:true"]
+    logging: *logging
+
+  api:
+    image: salio-api:${SALIO_VERSION:?Set SALIO_VERSION in .env}
+    build:
+      context: .
+      dockerfile: Salio.Api/Dockerfile
+    pull_policy: never
+    restart: unless-stopped
+    environment:
+      # Production: no startup migrations, no seeding, no Scalar, login
+      # cookie marked Secure.
+      ASPNETCORE_ENVIRONMENT: Production
+      ConnectionStrings__Default: "Host=db;Port=5432;Database=salio;Username=salio;Password=${POSTGRES_PASSWORD};Maximum Pool Size=20"
+      # Requests for any other host name are refused.
+      AllowedHosts: ${SALIO_DOMAIN:?Set SALIO_DOMAIN in .env}
+      # The address a client types. Setup links are built from it, so a
+      # wrong value here sends the client a link that does not open.
+      PublicBaseUrl: ${SALIO_PUBLIC_URL:-https://${SALIO_DOMAIN}}
+      # Where uploaded supplier invoices are kept: the "invoices" volume
+      # below. Without it invoice uploads answer 503.
+      InvoiceStorage__Path: /var/lib/salio/invoices
+      # No real invoice reader exists yet. Leave both empty.
+      InvoiceReader__Provider: ${INVOICE_READER_PROVIDER:-}
+      InvoiceReader__ApiKey: ${INVOICE_READER_API_KEY:-}
+      # Cors__AllowedOrigins is deliberately NOT set: Caddy serves the till
+      # and /api on one address, so no other origin needs access.
+      # Every SQL statement is logged at Information. Too much for a server.
+      Logging__LogLevel__Microsoft.EntityFrameworkCore: Warning
+      # Workstation GC: a smaller heap, which suits a 512M limit.
+      DOTNET_gcServer: "0"
+    ports:
+      # Loopback only. Used by a Caddy on the host (Path B) and by the
+      # checks in the runbook. Never reachable from outside the server.
+      - "127.0.0.1:${SALIO_API_PORT:-18080}:8080"
+    volumes:
+      # Keys that encrypt the login cookie. Kept, so a restart or a new
+      # release does not sign every phone out.
+      - dpkeys:/home/app/.aspnet/DataProtection-Keys
+      # Uploaded supplier invoices. Outside wwwroot; never served directly.
+      - invoices:/var/lib/salio/invoices
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - salio
+    # No container healthcheck: the image has no shell and no curl (on
+    # purpose). Health is GET /api/health, polled from the host by
+    # deploy/wait-for-api.sh and by the smoke test.
+    mem_limit: ${SALIO_API_MEM:-512m}
+    memswap_limit: ${SALIO_API_MEM:-512m}
+    oom_score_adj: 500
+    cpus: 1.0
+    pids_limit: 300
+    cap_drop: ["ALL"]
+    security_opt: ["no-new-privileges:true"]
+    stop_grace_period: 30s
+    logging: *logging
+
+  web:
+    image: salio-web:${SALIO_VERSION:?Set SALIO_VERSION in .env}
+    build:
+      context: ./web
+      args:
+        # Empty: the till calls /api on its own address, which Caddy routes.
+        VITE_API_URL: ""
+    pull_policy: never
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${SALIO_WEB_PORT:-18081}:8080"
+    networks:
+      - salio
+    mem_limit: 64m
+    memswap_limit: 64m
+    oom_score_adj: 500
+    cpus: 0.5
+    pids_limit: 100
+    cap_drop: ["ALL"]
+    security_opt: ["no-new-privileges:true"]
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:8080/ || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    logging: *logging
+
+  # Path A only (COMPOSE_PROFILES=caddy in .env). HTTPS for Salio's own
+  # domain, certificates from Let's Encrypt, kept in the caddy_data volume.
+  # NEVER delete that volume: asking for the same certificate again and
+  # again runs into Let's Encrypt's rate limit and the site stays down.
+  caddy:
+    image: caddy:2
+    profiles: ["caddy"]
+    restart: unless-stopped
+    environment:
+      # The one place the domain comes from: .env. deploy/caddy/Caddyfile
+      # reads it as {$SALIO_DOMAIN}.
+      SALIO_DOMAIN: ${SALIO_DOMAIN:?Set SALIO_DOMAIN in .env}
+    ports:
+      - "${SALIO_HTTP_PORT:-80}:80"
+      - "${SALIO_HTTPS_PORT:-443}:443"
+    volumes:
+      - ./deploy/caddy:/etc/caddy:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - api
+      - web
+    networks:
+      - salio
+    mem_limit: 128m
+    memswap_limit: 128m
+    oom_score_adj: 500
+    cpus: 0.5
+    pids_limit: 200
+    cap_drop: ["ALL"]
+    cap_add: ["NET_BIND_SERVICE"]
+    security_opt: ["no-new-privileges:true"]
+    logging: *logging
+
+networks:
+  salio:
+
+# Named after the project: salio_pgdata, salio_dpkeys, salio_invoices,
+# salio_caddy_data, salio_caddy_config. "docker compose down" keeps them;
+# "docker compose down -v" DELETES them (the database included).
+volumes:
+  pgdata:
+  dpkeys:
+  invoices:
+  caddy_data:
+  caddy_config:

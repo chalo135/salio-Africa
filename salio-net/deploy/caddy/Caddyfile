@@ -1,0 +1,16 @@
+# Path A: Salio's own Caddy, the "caddy" service in docker-compose.yml.
+# (If a Caddy already runs on the server, this file is not used: see
+# salio-host.caddy.)
+#
+# The domain is NOT written here. It comes from SALIO_DOMAIN in .env, which
+# docker-compose.yml hands to this container. Caddy gets the HTTPS
+# certificate for it from Let's Encrypt by itself and renews it, and sends
+# http:// to https://. The certificate lives in the caddy_data volume.
+#
+# The rules themselves are in salio-rules.caddy, shared with Path B.
+
+import salio-rules.caddy
+
+{$SALIO_DOMAIN} {
+	import salio_site api:8080 web:8080
+}

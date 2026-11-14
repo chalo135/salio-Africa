@@ -26,7 +26,8 @@ public class UserCreator
         string email,
         string plainPassword,
         MembershipRole role,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        bool mustChangePassword = false)
     {
         // Checked before anything touches the database: a short password is
         // the caller's mistake, not the database's problem.
@@ -67,7 +68,10 @@ public class UserCreator
             IsActive = true,
 
             // A fresh stamp, so this account's cookies are its own.
-            SecurityStamp = Guid.NewGuid()
+            SecurityStamp = Guid.NewGuid(),
+
+            // True when an Owner made the password up for them.
+            MustChangePassword = mustChangePassword
         };
 
         // The only place the plain password is used, and it leaves as a hash.

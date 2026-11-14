@@ -26,6 +26,13 @@ namespace Salio.Domain.Entities
         // debt itself lives on the journal line, not here.
         public Guid? CustomerId { get; set; }
 
+        // The id the till made for this checkout, before it was sent. If the
+        // answer is lost on a bad connection and the cashier presses Pay
+        // again, the same id arrives and the server returns this sale
+        // instead of booking a second one. Nullable: sales recorded before
+        // this existed have none, and a caller may still omit it.
+        public Guid? ClientRequestId { get; set; }
+
         // eTIMS — nullable and unused until KRA integration is built.
         public string? EtimsControlNumber { get; set; }
         public string? EtimsSignature { get; set; }

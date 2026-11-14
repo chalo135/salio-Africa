@@ -17,6 +17,10 @@ namespace Salio.Domain.Enums
         Drawings,
 
         // A credit customer paying off what they owe.
-        CustomerPayment
+        CustomerPayment,
+
+        // A reversing entry. SourceId is the entry it reverses. Undo posts
+        // one of these; nothing is ever deleted.
+        Reversal
     }
 }

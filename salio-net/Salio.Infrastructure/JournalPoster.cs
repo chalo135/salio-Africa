@@ -26,14 +26,17 @@ public class JournalPoster
     {
         // A filed period is closed. Changing its books after the return went
         // to KRA would make the filed figure wrong without anyone noticing.
-        bool periodFiled = await _db.FiledReturns
-            .AnyAsync(r => r.OrganizationId == entry.OrganizationId
+        var filedReturn = await _db.FiledReturns
+            .AsNoTracking()
+            .FirstOrDefaultAsync(r => r.OrganizationId == entry.OrganizationId
                 && r.PeriodFrom <= entry.EntryDate
                 && r.PeriodTo >= entry.EntryDate, cancellationToken);
 
-        if (periodFiled)
+        if (filedReturn is not null)
         {
-            throw new InvalidOperationException(
+            // The same sentence as always. The type lets a caller offer to
+            // post today instead (see ClosedPeriodException).
+            throw new ClosedPeriodException(entry.EntryDate, filedReturn.TaxType,
                 "The books for " + entry.EntryDate.ToString("yyyy-MM-dd")
                 + " are closed because a tax return has been filed for that period. "
                 + "Post the correction in a period that is still open.");

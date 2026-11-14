@@ -3,10 +3,9 @@ using Salio.Domain.Enums;
 
 namespace Salio.Api.Dtos;
 
-public class CreateUserRequest
+// No password: Salio makes a temporary one and the person replaces it.
+public class CreatePersonRequest
 {
-    // Optional: with one shop the server knows which it is. If it is sent,
-    // the server still checks the caller belongs to it (locked rule 9).
     public Guid? OrganizationId { get; set; }
 
     [Required]
@@ -16,10 +15,6 @@ public class CreateUserRequest
     [Required]
     [MaxLength(256)]
     public string Email { get; set; } = string.Empty;
-
-    // Checked for length by UserCreator, then hashed. Never stored as typed.
-    [Required]
-    public string Password { get; set; } = string.Empty;
 
     [Required]
     public MembershipRole Role { get; set; }

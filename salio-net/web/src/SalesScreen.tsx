@@ -1,6 +1,9 @@
 import { useState, useEffect } from "react";
 import { API, kes, paymentName } from "./auth";
 import Receipt from "./Receipt";
+import SalioLoader from "./SalioLoader";
+import useShowLoader from "./useShowLoader";
+import { apiFetch } from "./api";
 
 type SalePayment = {
   method: string; // "Cash", "Mpesa", "Card", "Credit"
@@ -126,12 +129,10 @@ function howPaid(payments: SalePayment[]) {
 export default function SalesScreen({
   shopId,
   shopName,
-  onBack,
   onExpired,
 }: {
   shopId: string;
   shopName: string;
-  onBack: () => void;
   onExpired: () => void;
 }) {
   // Today is what opens.
@@ -158,12 +159,13 @@ export default function SalesScreen({
     range.from === "" || range.to === ""
       ? "Pick both dates."
       : range.to < range.from
-        ? "The end date is before the start date."
+        ? "End is before start"
         : "";
 
   const requestKey = `${shopId}|${range.from}|${range.to}|${attempt}`;
   const loading = rangeProblem === "" && (result === null || result.key !== requestKey);
   const current = !loading && rangeProblem === "" ? result : null;
+  const showLoading = useShowLoader(loading);
   const sales = current?.sales ?? [];
   const problem = current?.problem ?? "";
 
@@ -184,7 +186,7 @@ export default function SalesScreen({
       }
     };
 
-    fetch(
+    apiFetch(
       `${API}/api/sales?organizationId=${shopId}&from=${range.from}&to=${range.to}`,
       { credentials: "include" },
     )
@@ -199,7 +201,7 @@ export default function SalesScreen({
         }
 
         if (!response.ok) {
-          failed("The server could not load these sales.");
+          failed("Sales didn't load.");
           return;
         }
 
@@ -211,7 +213,7 @@ export default function SalesScreen({
       })
       // An empty list and a dead connection look identical on screen, so
       // this one is worth saying out loud.
-      .catch(() => failed("Could not reach the till server. Check the connection."));
+      .catch(() => failed("Can't reach Salio"));
 
     // The range changed before the answer came: drop the answer.
     return () => {
@@ -237,7 +239,7 @@ export default function SalesScreen({
     setDetailProblem("");
 
     try {
-      const response = await fetch(`${API}/api/sales/${id}?organizationId=${shopId}`, {
+      const response = await apiFetch(`${API}/api/sales/${id}?organizationId=${shopId}`, {
         credentials: "include",
       });
 
@@ -247,13 +249,13 @@ export default function SalesScreen({
       }
 
       if (!response.ok) {
-        setDetailProblem("Could not open that sale.");
+        setDetailProblem("Sale didn't open.");
         return;
       }
 
       setOpenSale(await response.json());
     } catch {
-      setDetailProblem("Could not reach the till server.");
+      setDetailProblem("Can't reach Salio.");
     } finally {
       setOpeningId(null);
     }
@@ -319,15 +321,9 @@ export default function SalesScreen({
 
   // ---------- the list ----------
   return (
-    <div className="flex h-dvh flex-col bg-background text-foreground">
-      <div className="flex shrink-0 items-center gap-2 border-b border-border bg-surface px-2 py-1.5">
-        <button
-          onClick={onBack}
-          className="min-h-11 rounded-lg border-2 border-border-strong px-3 text-sm font-bold"
-        >
-          ‹ Till
-        </button>
-        <span className="text-base font-bold">{isToday ? "Today's sales" : "Sales"}</span>
+    <div className="flex h-full flex-col bg-background text-foreground">
+      <div className="flex min-h-11 shrink-0 items-center gap-2 border-b border-border bg-surface px-3 py-1.5">
+        <span className="text-base font-bold">{isToday ? "Today" : "Sales"}</span>
       </div>
 
       {/* Which days. Scrolls sideways on a narrow phone rather than wrapping. */}
@@ -396,7 +392,7 @@ export default function SalesScreen({
         </div>
         {showing && creditMinor > 0 && (
           <div className="flex justify-between text-base">
-            <span className="text-muted-foreground">Credit, not yet paid</span>
+            <span className="text-muted-foreground">Unpaid credit</span>
             <span className="font-money font-semibold">{figure(creditMinor)}</span>
           </div>
         )}
@@ -407,11 +403,7 @@ export default function SalesScreen({
           <p className="p-4 text-base font-semibold text-error">{rangeProblem}</p>
         )}
 
-        {loading && (
-          <p className="p-4 text-base text-muted-foreground">
-            {isToday ? "Loading today's sales…" : "Loading sales…"}
-          </p>
-        )}
+        {showLoading && <SalioLoader size="inline" message="Loading sales…" />}
 
         {problem !== "" && (
           <div className="p-4">
@@ -426,7 +418,7 @@ export default function SalesScreen({
         )}
 
         {showing && sales.length === 0 && (
-          <p className="p-4 text-base text-muted-foreground">
+          <p className="p-4 text-base md:text-sm text-muted-foreground">
             {isToday ? "No sales yet today." : "No sales in this period."}
           </p>
         )}

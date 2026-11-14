@@ -6,6 +6,13 @@ namespace Salio.Domain.Entities
         public Guid OrganizationId { get; set; }
         public Guid SaleId { get; set; }
         public Guid ProductId { get; set; }
+
+        // The part's name and SKU as they were when it was sold. A receipt
+        // is a record: renaming a part later must not change what an old
+        // receipt says, so these are copied here, never read live.
+        public string ProductName { get; set; } = string.Empty;
+        public string Sku { get; set; } = string.Empty;
+
         public decimal Quantity { get; set; }
         public long UnitPriceMinor { get; set; }
         public long LineTotalMinor { get; set; }

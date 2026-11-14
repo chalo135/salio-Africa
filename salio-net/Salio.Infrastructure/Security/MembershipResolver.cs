@@ -24,9 +24,11 @@ public class MembershipResolver
         Guid? requestedOrganizationId,
         CancellationToken cancellationToken)
     {
+        // A switched-off membership counts as no membership at all: that
+        // person can see nothing of that shop, from their very next request.
         var memberships = await _db.Memberships
             .AsNoTracking()
-            .Where(m => m.AppUserId == userId)
+            .Where(m => m.AppUserId == userId && m.DeactivatedAt == null)
             .ToListAsync(cancellationToken);
 
         // The decision itself is in Domain, where it is tested without a

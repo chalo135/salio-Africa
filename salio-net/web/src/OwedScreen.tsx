@@ -1,6 +1,9 @@
 import { useState, useEffect, useRef } from "react";
 import { API, kes, paymentName } from "./auth";
 import { type Customer } from "./CustomerPicker";
+import SalioLoader from "./SalioLoader";
+import useShowLoader from "./useShowLoader";
+import { apiFetch, problemText } from "./api";
 
 type StatementLine = {
   date: string;
@@ -42,37 +45,13 @@ function dayLabel(day: string) {
   });
 }
 
-// The server's own words for a refusal: "detail" is written for a person.
-async function refusalText(response: Response) {
-  try {
-    const problem = await response.json();
-    if (typeof problem.detail === "string" && problem.detail !== "") {
-      return problem.detail;
-    }
-    if (problem.errors) {
-      const first = Object.values(problem.errors).flat()[0];
-      if (typeof first === "string") {
-        return first;
-      }
-    }
-    if (typeof problem.title === "string") {
-      return problem.title;
-    }
-  } catch {
-    // Not JSON: fall through.
-  }
-  return "The server refused it.";
-}
-
 // Who owes the shop what. Owner only: App.tsx shows it to an Owner, and the
 // statement and payment endpoints refuse a Cashier as well.
 export default function OwedScreen({
   shopId,
-  onBack,
   onExpired,
 }: {
   shopId: string;
-  onBack: () => void;
   onExpired: () => void;
 }) {
   // ---- The list ----
@@ -98,7 +77,7 @@ export default function OwedScreen({
   useEffect(() => {
     let cancelled = false;
 
-    fetch(`${API}/api/customers?organizationId=${shopId}`, { credentials: "include" })
+    apiFetch(`${API}/api/customers?organizationId=${shopId}`, { credentials: "include" })
       .then(async (response) => {
         if (cancelled) return;
         if (response.status === 401) {
@@ -106,13 +85,13 @@ export default function OwedScreen({
           return;
         }
         if (!response.ok) {
-          setListProblem(await refusalText(response));
+          setListProblem(await problemText(response));
           return;
         }
         setCustomers(await response.json());
       })
       .catch(() => {
-        if (!cancelled) setListProblem("Could not reach the till server.");
+        if (!cancelled) setListProblem("Can't reach Salio.");
       });
 
     return () => {
@@ -128,7 +107,7 @@ export default function OwedScreen({
 
     let cancelled = false;
 
-    fetch(`${API}/api/customers/${openId}/statement?organizationId=${shopId}`, {
+    apiFetch(`${API}/api/customers/${openId}/statement?organizationId=${shopId}`, {
       credentials: "include",
     })
       .then(async (response) => {
@@ -138,13 +117,13 @@ export default function OwedScreen({
           return;
         }
         if (!response.ok) {
-          setStatementProblem(await refusalText(response));
+          setStatementProblem(await problemText(response));
           return;
         }
         setStatement(await response.json());
       })
       .catch(() => {
-        if (!cancelled) setStatementProblem("Could not reach the till server.");
+        if (!cancelled) setStatementProblem("Can't reach Salio.");
       });
 
     return () => {
@@ -181,7 +160,7 @@ export default function OwedScreen({
     const amountMinor = Math.round((Number(amountText) || 0) * 100);
 
     if (!(amountMinor > 0)) {
-      setPaymentProblem("Type an amount more than zero.");
+      setPaymentProblem("Amount must be more than 0.");
       return;
     }
     if (paidWith === null) {
@@ -195,7 +174,7 @@ export default function OwedScreen({
     setPaymentSaved("");
 
     try {
-      const response = await fetch(`${API}/api/customer-payments`, {
+      const response = await apiFetch(`${API}/api/customer-payments`, {
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
@@ -215,7 +194,7 @@ export default function OwedScreen({
 
       if (!response.ok) {
         // What was typed stays. The server says the balance if it was too much.
-        setPaymentProblem(await refusalText(response));
+        setPaymentProblem(await problemText(response));
         return;
       }
 
@@ -229,17 +208,22 @@ export default function OwedScreen({
       setPaidWith(null);
       reloadAll();
     } catch {
-      setPaymentProblem("Could not reach the till server. Nothing was saved. Check the connection and try again.");
+      setPaymentProblem("Can't reach Salio");
     } finally {
       savingNow.current = false;
       setSaving(false);
     }
   }
 
+  const showListLoading = useShowLoader(customers === null && listProblem === "");
+  const showStatementLoading = useShowLoader(
+    openId !== null && statement === null && statementProblem === "",
+  );
+
   // ---------- one customer ----------
   if (openId !== null) {
     return (
-      <div className="flex h-dvh flex-col bg-background text-foreground">
+      <div className="flex h-full flex-col bg-background text-foreground">
         <div className="flex shrink-0 items-center gap-2 border-b border-border bg-surface px-2 py-1.5">
           <button
             onClick={() => setOpenId(null)}
@@ -251,8 +235,8 @@ export default function OwedScreen({
         </div>
 
         <main className="min-h-0 flex-1 overflow-y-auto">
-          {statement === null && statementProblem === "" && (
-            <p className="p-4 text-base text-muted-foreground">Loading…</p>
+          {statement === null && statementProblem === "" && showStatementLoading && (
+            <SalioLoader size="inline" message="Loading statement…" />
           )}
 
           {statementProblem !== "" && (
@@ -305,7 +289,7 @@ export default function OwedScreen({
               ))}
 
               {statement.lines.length === 0 && (
-                <p className="p-4 text-base text-muted-foreground">Nothing on credit yet.</p>
+                <p className="p-4 text-base md:text-sm text-muted-foreground">Nothing on credit yet.</p>
               )}
             </>
           )}
@@ -405,20 +389,14 @@ export default function OwedScreen({
   }
 
   return (
-    <div className="flex h-dvh flex-col bg-background text-foreground">
-      <div className="flex shrink-0 items-center gap-2 border-b border-border bg-surface px-2 py-1.5">
-        <button
-          onClick={onBack}
-          className="min-h-11 rounded-lg border-2 border-border-strong px-3 text-sm font-bold"
-        >
-          ‹ Till
-        </button>
-        <span className="text-base font-bold">Who owes what</span>
+    <div className="flex h-full flex-col bg-background text-foreground">
+      <div className="flex min-h-11 shrink-0 items-center gap-2 border-b border-border bg-surface px-3 py-1.5">
+        <span className="text-base font-bold">Owed</span>
       </div>
 
       <section className="shrink-0 border-b-2 border-border bg-surface px-3 py-2">
         <div className="flex items-baseline justify-between">
-          <span className="text-base font-semibold">Owed to the shop</span>
+          <span className="text-base font-semibold">Total owed</span>
           <span className="font-money text-2xl font-bold">
             KES {customers === null ? "—" : kes(totalOwedMinor)}
           </span>
@@ -426,8 +404,8 @@ export default function OwedScreen({
       </section>
 
       <main className="min-h-0 flex-1 overflow-y-auto">
-        {customers === null && listProblem === "" && (
-          <p className="p-4 text-base text-muted-foreground">Loading…</p>
+        {customers === null && listProblem === "" && showListLoading && (
+          <SalioLoader size="inline" message="Loading customers…" />
         )}
 
         {listProblem !== "" && (
@@ -446,7 +424,7 @@ export default function OwedScreen({
         )}
 
         {customers !== null && owing.length === 0 && (
-          <p className="p-4 text-base text-muted-foreground">Nobody owes the shop anything.</p>
+          <p className="p-4 text-base md:text-sm text-muted-foreground">Nobody owes anything.</p>
         )}
 
         {owing.map((customer) => (

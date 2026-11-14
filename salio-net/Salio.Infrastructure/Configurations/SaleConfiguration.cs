@@ -19,6 +19,14 @@ namespace Salio.Infrastructure.Configurations
 
             builder.HasIndex(s => new { s.OrganizationId, s.SaleDate });
 
+            // One checkout, one sale. If two requests carrying the same id
+            // race each other, the database refuses the second. The filter
+            // keeps older sales, which have no id, out of the way of each
+            // other.
+            builder.HasIndex(s => new { s.OrganizationId, s.ClientRequestId })
+                .IsUnique()
+                .HasFilter("\"ClientRequestId\" IS NOT NULL");
+
             // "Show me my own sales" (locked rule 13). Restrict, so a person
             // who has sold anything can never be deleted out of the books.
             builder.HasOne<AppUser>()

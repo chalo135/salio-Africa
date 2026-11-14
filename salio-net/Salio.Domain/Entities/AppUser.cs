@@ -2,8 +2,10 @@ namespace Salio.Domain.Entities
 {
     // A person who can log in. One row per human, not per shop.
     //
-    // This is the ONLY entity in Salio without an OrganizationId, and so the
-    // only one exempt from locked rule 2. It is exempt because of locked
+    // This entity has no OrganizationId, and so is exempt from locked rule 2.
+    // (So are TrustedDevice, a person's phone; SetupCode, which exists before
+    // its shop; AdminAuditLog, the platform admin's own record; and
+    // Organization, the shop itself.) It is exempt because of locked
     // rule 10: a user may belong to more than one organisation, so which
     // shops they can see is held in Membership, not here. Putting an
     // OrganizationId on this row would make a second job impossible and
@@ -28,7 +30,18 @@ namespace Salio.Domain.Entities
         public Guid SecurityStamp { get; set; }
 
         // A person who has left. Their sales stay in the books, so the row is
-        // never deleted.
+        // never deleted. This switches off the whole account, in every shop;
+        // leaving one shop is Membership.DeactivatedAt instead.
         public bool IsActive { get; set; } = true;
+
+        // True for a person given a temporary password by an Owner. Until
+        // they choose their own, they may sign in and change it, and nothing
+        // else (enforced once, in Security/PasswordChangeGate.cs).
+        public bool MustChangePassword { get; set; }
+
+        // True only for the Salio developer, who may open the admin area.
+        // Only ever set by hand in psql. EF can never write it (see
+        // AppUserConfiguration), and no endpoint may grant it.
+        public bool IsPlatformAdmin { get; set; }
     }
 }

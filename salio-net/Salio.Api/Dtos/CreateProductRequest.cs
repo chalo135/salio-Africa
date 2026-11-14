@@ -10,18 +10,18 @@ public class CreateProductRequest
     public Guid? OrganizationId { get; set; }
 
     // Lengths match ProductConfiguration, so a long value gets a 400, not a database error.
-    [Required]
-    [MaxLength(50)]
+    [Required(ErrorMessage = "A part needs a SKU")]
+    [MaxLength(50, ErrorMessage = "A SKU can be at most 50 characters")]
     public string Sku { get; set; } = string.Empty;
 
-    [Required]
-    [MaxLength(200)]
+    [Required(ErrorMessage = "A part needs a name")]
+    [MaxLength(200, ErrorMessage = "A name can be at most 200 characters")]
     public string Name { get; set; } = string.Empty;
 
-    [Range(0, long.MaxValue)]
+    [Range(0, long.MaxValue, ErrorMessage = "The selling price cannot be below zero")]
     public long SellPriceMinor { get; set; }
 
     // Where it sits on the shelf. Optional: not every item has a fixed place.
-    [MaxLength(20)]
+    [MaxLength(20, ErrorMessage = "A shelf code can be at most 20 characters")]
     public string? BinLocation { get; set; }
 }

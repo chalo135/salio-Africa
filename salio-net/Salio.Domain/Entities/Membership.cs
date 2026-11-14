@@ -15,5 +15,15 @@ namespace Salio.Domain.Entities
         public Guid AppUserId { get; set; }
         public MembershipRole Role { get; set; }
         public DateTimeOffset CreatedAt { get; set; }
+
+        // Set when an Owner switches this person off in this shop. Null means
+        // active. Per shop, not per person: someone who also works at another
+        // shop keeps that one (locked rule 10). The row is never deleted,
+        // because their sales stay in the books.
+        //
+        // A date rather than a bool, so the column could be added to rows
+        // that already exist without a default that would switch them all
+        // off.
+        public DateTimeOffset? DeactivatedAt { get; set; }
     }
 }

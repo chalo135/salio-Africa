@@ -13,6 +13,10 @@ namespace Salio.Infrastructure.Configurations
 
             builder.Property(l => l.Quantity).HasPrecision(18, 3);
 
+            // Same lengths as Product, so any name a part can have fits.
+            builder.Property(l => l.ProductName).IsRequired().HasMaxLength(200);
+            builder.Property(l => l.Sku).IsRequired().HasMaxLength(50);
+
             builder.HasIndex(l => l.SaleId);
             builder.HasIndex(l => new { l.OrganizationId, l.ProductId });
 

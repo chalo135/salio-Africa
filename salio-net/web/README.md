@@ -1,75 +1,77 @@
-# React + TypeScript + Vite
+# Salio till (web)
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+The till: React 19 + TypeScript + Vite + Tailwind. It is a set of static
+files; everything it knows comes from the API under `/api`.
 
-Currently, two official plugins are available:
+## Commands
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+| Command | What it does |
+|---|---|
+| `npm run dev` | The till on http://localhost:5173, talking to the API on http://localhost:5077 |
+| `npm run build` | Type-checks, then writes the real build to `dist/` |
+| `npm run preview` | Serves `dist/` on http://localhost:4173, to try the real build |
+| `npm run lint` | ESLint |
 
-## React Compiler
+## Where the API is: `VITE_API_URL`
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+One setting, read when the till is **built** and baked into the JavaScript.
+Changing it means building again. The code is the `API` constant in
+`src/auth.ts`.
 
-## Expanding the ESLint configuration
+| How the till is run | `VITE_API_URL` | The till calls |
+|---|---|---|
+| `npm run build` / Docker | not set, or empty | `/api/...` on the address the till was loaded from |
+| `npm run build` / Docker | `https://api.example.com` | `https://api.example.com/api/...` |
+| `npm run dev` | not set | `http://localhost:5077/api/...` |
+| `npm run dev` | set | whatever it says |
 
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
+A real build never falls back to `localhost`. On the server leave it empty:
+Caddy serves the till and `/api` under one hostname.
 
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
+No slash at the end of the value.
 
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
+Three ways to set it:
 
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+1. **Docker (how the server is built).** A build-arg. `docker-compose.yml`
+   already passes it empty:
 
-```
+   ```
+   docker build --build-arg VITE_API_URL= -t salio-web .
+   ```
 
-You can also install [eslint-plugin-react-x](https://npmx.dev/package/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://npmx.dev/package/eslint-plugin-react-dom) for React-specific lint rules:
+   Docker does not read `.env` files from this folder (`.dockerignore`
+   leaves them out), so the build-arg is the only way in.
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
+2. **A file, for builds on the laptop.** Copy `.env.example` to
+   `.env.production` (used by `npm run build`) or `.env.development` (used
+   by `npm run dev`). Both are gitignored.
 
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+3. **An environment variable, for one command.**
 
-```
+   ```
+   # PowerShell
+   $env:VITE_API_URL = "https://api.example.com"; npm run build
+   # bash
+   VITE_API_URL=https://api.example.com npm run build
+   ```
+
+To check a build: `grep -r "localhost:5077" dist/` must find nothing.
+
+## Installing on the tablet, and bad connections
+
+- `public/manifest.webmanifest` and `public/icons/` make Salio installable
+  from Chrome ("Install Salio" in the menu, or Chrome's own menu).
+- `public/sw.js` is the service worker. It keeps the till's own files on the
+  tablet, so a bad connection still shows the till. It never touches `/api`
+  and never saves anything from it. Opening the page always asks the network
+  first, so a release reaches the tablet the next time the page loads with a
+  working connection. The rules are written at the top of that file.
+- The worker is registered only in a real build (`src/install.ts`). With
+  `npm run dev` it is not used, and one left over from earlier is removed.
+- To throw away everything the worker has saved on every tablet, change
+  `VERSION` in `public/sw.js` and release.
+
+## Serving
+
+`Dockerfile` builds the till and serves `dist/` with nginx (`nginx.conf`).
+HTTPS and `/api` belong to Caddy, in front.
