@@ -28,5 +28,13 @@ namespace Salio.Domain.Entities
         // What the owner said at setup. Not a ruling on what they owe: "not
         // sure" is a real answer, kept so it can be asked again later.
         public TaxPosition TaxPosition { get; set; }
+
+        // Whether cashiers may see what the shop paid for its stock. Off
+        // unless the owner turns it on. Read only by CostVisibilityRules.
+        public bool CashierSeesCost { get; set; } = false;
+
+        // The smallest margin over cost the shop wants on a sale, in whole
+        // percent. Sets each part's stop price (PricingRules.StopPrice).
+        public int MinMarginPercent { get; set; } = 15;
     }
 }

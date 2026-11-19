@@ -179,6 +179,21 @@ public class SalesController : ControllerBase
                     "Nothing in this shop matches: " + lineRequest.ProductId));
             }
 
+            // The price agreed at the counter. The asking price is the
+            // part's own, never one the browser sends; the agreed price may
+            // come down from it but never go above it or below zero.
+            if (lineRequest.UnitPriceMinor < 0)
+            {
+                return BadRequest(Rejected(
+                    product.Name + ": the price cannot be below zero."));
+            }
+
+            if (lineRequest.UnitPriceMinor > product.SellPriceMinor)
+            {
+                return BadRequest(Rejected(
+                    product.Name + ": the price is above its asking price. Check the price and try again."));
+            }
+
             productsSold[product.Id] = product;
         }
 
@@ -210,6 +225,7 @@ public class SalesController : ControllerBase
 
                 Quantity = lineRequest.Quantity,
                 UnitPriceMinor = lineRequest.UnitPriceMinor,
+                ListPriceMinor = productsSold[lineRequest.ProductId].SellPriceMinor,
                 LineTotalMinor = lineTotalMinor,
                 UnitCostMinor = unitCostMinor,
                 TaxBand = lineRequest.TaxBand

@@ -13,7 +13,13 @@ export type Part = {
   isActive: boolean;
   quantityOnHand: number;
   needsReceiving: boolean;
-  averageCostMinor: number | null;
+  // Left out by the server when this person may not see the buying price.
+  averageCostMinor?: number | null;
+  // True when the server allowed the buying price to be sent.
+  buyingPriceShown?: boolean;
+  // False when the cost came from an import or nobody ever stated one.
+  // Sent only with the cost.
+  costIsConfirmed?: boolean;
 };
 
 // Shillings typed, cents sent. Rounded, so 10.505 cannot become a fraction
@@ -247,16 +253,25 @@ export default function PartForm({
                 {part.needsReceiving ? "Needs receiving (" + qty(part.quantityOnHand) + ")" : qty(part.quantityOnHand)}
               </span>
             </div>
-            <div className="mt-1 flex items-baseline justify-between">
-              <span className="text-base">Average cost</span>
-              <span className="font-money text-lg font-bold">
-                {part.needsReceiving
-                  ? "Unknown"
-                  : part.quantityOnHand <= 0 || part.averageCostMinor === null
-                    ? "None in stock"
-                    : "KES " + kes(part.averageCostMinor)}
-              </span>
-            </div>
+            {/* Only when the server sent the buying price. Hidden from this
+                person: the row is not there at all. */}
+            {part.buyingPriceShown && (
+              <div className="mt-1 flex items-baseline justify-between">
+                <span className="text-base">
+                  Average cost
+                  {part.costIsConfirmed === false && (
+                    <span className="block text-sm font-semibold text-warning-strong">cost not confirmed</span>
+                  )}
+                </span>
+                <span className="font-money text-lg font-bold">
+                  {part.needsReceiving
+                    ? "Unknown"
+                    : part.quantityOnHand <= 0 || part.averageCostMinor == null
+                      ? "None in stock"
+                      : "KES " + kes(part.averageCostMinor)}
+                </span>
+              </div>
+            )}
           </div>
         )}
 

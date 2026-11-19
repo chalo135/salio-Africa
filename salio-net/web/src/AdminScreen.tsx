@@ -110,6 +110,80 @@ const smallButton =
 const th = "whitespace-nowrap px-3 py-2 text-left text-sm font-bold text-muted-foreground";
 const td = "whitespace-nowrap px-3 py-2 text-base";
 
+// A Kenyan mobile number in the form wa.me wants: country code, no plus, no
+// leading zero. People type it four different ways, so accept all of them.
+// Returns null if it is not a Kenyan mobile, and the caller stays disabled.
+function kenyanWhatsAppNumber(typed: string): string | null {
+  const digits = typed.replace(/\D/g, "");
+
+  if (digits.length === 12 && digits.startsWith("254")) {
+    return digits;
+  }
+
+  // 0712345678
+  if (digits.length === 10 && digits.startsWith("0")) {
+    return "254" + digits.slice(1);
+  }
+
+  // 712345678
+  if (digits.length === 9 && (digits.startsWith("7") || digits.startsWith("1"))) {
+    return "254" + digits;
+  }
+
+  return null;
+}
+
+// Opens WhatsApp with the message already typed to one person. It does not
+// send by itself: that needs Meta's API, a verified business and approved
+// templates, which is a lot of machinery for a link sent once per shop.
+// The number is used here and nowhere else - it is never sent to Salio.
+function SendOnWhatsApp({ message }: { message: string }) {
+  const [typed, setTyped] = useState("");
+  const number = kenyanWhatsAppNumber(typed);
+
+  return (
+    <div className="mt-4">
+      <label htmlFor="wa-number" className="text-base font-bold">
+        Send on WhatsApp
+      </label>
+      <div className="mt-1 flex items-start gap-2">
+        <input
+          id="wa-number"
+          type="tel"
+          inputMode="tel"
+          value={typed}
+          onChange={(e) => setTyped(e.target.value)}
+          placeholder="0712345678"
+          autoComplete="off"
+          className={inputClass}
+        />
+        {number === null ? (
+          <span
+            aria-disabled="true"
+            className="flex h-12 shrink-0 items-center rounded-lg border-2 border-border px-5 text-base font-bold text-muted-foreground"
+          >
+            Open
+          </span>
+        ) : (
+          <a
+            href={"https://wa.me/" + number + "?text=" + encodeURIComponent(message)}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex h-12 shrink-0 items-center rounded-lg bg-primary px-5 text-base font-bold text-primary-foreground"
+          >
+            Open
+          </a>
+        )}
+      </div>
+      <p className="mt-1 text-sm text-muted-foreground">
+        {typed !== "" && number === null
+          ? "That is not a Kenyan mobile number. Try 0712345678."
+          : "Opens WhatsApp with the message typed. You press send."}
+      </p>
+    </div>
+  );
+}
+
 // One copyable value: the box, and a Copy button that says what happened.
 function CopyField({ label, value, multiline, big }: { label: string; value: string; multiline?: boolean; big?: boolean }) {
   const box = useRef<HTMLInputElement & HTMLTextAreaElement>(null);
@@ -334,6 +408,7 @@ export default function AdminScreen() {
               <CopyField label="Code" value={dashed(issued.code)} big />
               <CopyField label="Link" value={issued.link} />
               <CopyField label="WhatsApp message" value={issued.message} multiline />
+              <SendOnWhatsApp message={issued.message} />
             </div>
           )}
         </section>

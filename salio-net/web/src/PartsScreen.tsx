@@ -225,7 +225,28 @@ export default function PartsScreen({
                 )}
               </span>
             </span>
-            <span className="shrink-0 font-money text-lg font-bold">{kes(part.sellPriceMinor)}</span>
+            <span className="flex shrink-0 flex-col items-end">
+              <span className="font-money text-lg font-bold">{kes(part.sellPriceMinor)}</span>
+              {/* The buying price, only when the server sent it. When it
+                  is hidden from this person, nothing shows at all. */}
+              {part.buyingPriceShown && part.averageCostMinor != null && part.averageCostMinor > 0 &&
+                part.costIsConfirmed !== false && (
+                <span className="font-money text-sm text-muted-foreground">
+                  bought {kes(part.averageCostMinor)}
+                </span>
+              )}
+              {/* A cost an import carried in: still shown, so the owner sees
+                  what the books hold, but never as if someone paid it. */}
+              {part.buyingPriceShown && part.averageCostMinor != null && part.averageCostMinor > 0 &&
+                part.costIsConfirmed === false && (
+                <span className="text-sm font-semibold text-warning-strong">
+                  cost not confirmed <span className="font-money">({kes(part.averageCostMinor)})</span>
+                </span>
+              )}
+              {part.buyingPriceShown && !(part.averageCostMinor != null && part.averageCostMinor > 0) && (
+                <span className="text-sm font-semibold text-warning-strong">add cost</span>
+              )}
+            </span>
           </button>
         ))}
 

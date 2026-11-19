@@ -18,6 +18,11 @@ namespace Salio.Infrastructure.Configurations
             builder.Property(o => o.Trade).IsRequired().HasMaxLength(120).HasDefaultValue("");
 
             builder.Property(o => o.SellableNoun).IsRequired().HasMaxLength(30).HasDefaultValue("Parts");
+
+            // Cost stays hidden from cashiers until an owner says otherwise.
+            builder.Property(o => o.CashierSeesCost).IsRequired().HasDefaultValue(false);
+
+            builder.Property(o => o.MinMarginPercent).IsRequired().HasDefaultValue(15);
         }
     }
 }

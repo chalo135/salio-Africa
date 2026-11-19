@@ -20,17 +20,20 @@ public class ProductsController : ControllerBase
     private readonly StockService _stockService;
     private readonly OpeningStockWriter _openingStock;
     private readonly OrganizationGuard _guard;
+    private readonly ImportedCostFinder _importedCosts;
 
     public ProductsController(
         SalioDbContext db,
         StockService stockService,
         OpeningStockWriter openingStock,
-        OrganizationGuard guard)
+        OrganizationGuard guard,
+        ImportedCostFinder importedCosts)
     {
         _db = db;
         _stockService = stockService;
         _openingStock = openingStock;
         _guard = guard;
+        _importedCosts = importedCosts;
     }
 
     // The shelf list. Quantity is never stored: it is the sum of every
@@ -69,6 +72,12 @@ public class ProductsController : ControllerBase
             .Where(m => m.OrganizationId == access.OrganizationId)
             .ToListAsync(cancellationToken);
 
+        // One cost decision for the whole list (CostVisibilityRules), and one
+        // look at which costs an import brought in (CostProvenanceRules).
+        PricingView pricing = await PricingViewAsync(access, cancellationToken);
+        var importedMovementIds = await _importedCosts.LiveImportedMovementIdsAsync(
+            access.OrganizationId, cancellationToken);
+
         var response = new List<ProductStockResponse>();
 
         foreach (var product in products)
@@ -83,29 +92,64 @@ public class ProductsController : ControllerBase
                 }
             }
 
-            response.Add(ToResponse(product, productMovements, access.IsOwner));
+            response.Add(BuildResponse(product, productMovements, _stockService, pricing, importedMovementIds));
         }
 
         return response;
     }
 
+    // What the caller may see of the shop's buying price, and the shop's
+    // margin for stop prices. Worked out once per request.
+    public record PricingView(bool CanSeeCost, int MinMarginPercent);
+
+    private async Task<PricingView> PricingViewAsync(
+        MembershipAccessResult access, CancellationToken cancellationToken)
+    {
+        var organization = await _db.Organizations.AsNoTracking()
+            .FirstAsync(o => o.Id == access.OrganizationId, cancellationToken);
+
+        // The guard only grants access through an active membership, so a
+        // caller who got this far is an active member. Whether they are a
+        // platform admin is not read here: that column may only be named in
+        // three files (PlatformAdminTests), and an admin is not a member of a
+        // client's shop. False is the answer that shows less.
+        var context = new CostVisibilityContext(
+            access.Role,
+            organization.CashierSeesCost,
+            IsActiveMember: access.IsAllowed,
+            PlatformAdmin: false);
+
+        return new PricingView(
+            CostVisibilityRules.CanSeeCost(context),
+            organization.MinMarginPercent);
+    }
+
     // One line of the shelf list, from a product and its own movements.
-    private ProductStockResponse ToResponse(
-        Product product, List<StockMovement> productMovements, bool isOwner)
+    // Static so a test can check exactly what goes to the browser.
+    [NonAction]
+    public static ProductStockResponse BuildResponse(
+        Product product, List<StockMovement> productMovements,
+        StockService stockService, PricingView pricing,
+        IReadOnlySet<Guid> importedMovementIds)
     {
         // The counting and costing rules live in StockService and stay
         // there. A product that has never moved gets 0 from both.
-        decimal quantityOnHand = _stockService.CurrentQuantity(productMovements);
+        decimal quantityOnHand = stockService.CurrentQuantity(productMovements);
         bool needsReceiving = quantityOnHand < 0;
 
         // Below zero, weighted average cost means nothing, so no figure
-        // is given at all rather than one that looks right (rule 16).
+        // is used at all rather than one that looks right (rule 16).
         long? averageCostMinor = null;
 
-        if (isOwner && !needsReceiving)
+        if (!needsReceiving)
         {
-            averageCostMinor = _stockService.CalculateWeightedAverageCost(productMovements);
+            averageCostMinor = stockService.CalculateWeightedAverageCost(productMovements);
         }
+
+        // A cost an import carried in, or none a person ever stated, gives
+        // no stop: it goes down the same path as no cost at all.
+        bool costIsConfirmed = CostProvenanceRules.CostIsConfirmed(productMovements, importedMovementIds);
+        long? costForPricing = costIsConfirmed ? averageCostMinor : null;
 
         return new ProductStockResponse
         {
@@ -120,19 +164,32 @@ public class ProductsController : ControllerBase
             IsActive = product.IsActive,
             QuantityOnHand = quantityOnHand,
             NeedsReceiving = needsReceiving,
-            AverageCostMinor = averageCostMinor
+
+            // The stop is sent whatever the caller may see. The cost is not:
+            // when the gate says no it is left out of the JSON entirely.
+            StopPriceMinor = PricingRules.StopPrice(
+                product.MinPriceMinor, costForPricing, pricing.MinMarginPercent),
+            BuyingPriceShown = pricing.CanSeeCost,
+            AverageCostMinor = pricing.CanSeeCost ? averageCostMinor : null,
+
+            // Sent with the cost, never without it.
+            CostIsConfirmed = pricing.CanSeeCost ? costIsConfirmed : null
         };
     }
 
     // The same shape for one product, after it has been changed.
     private async Task<ProductStockResponse> ToResponseAsync(
-        Product product, bool isOwner, CancellationToken cancellationToken)
+        Product product, MembershipAccessResult access, CancellationToken cancellationToken)
     {
         var productMovements = await _db.StockMovements.AsNoTracking()
             .Where(m => m.OrganizationId == product.OrganizationId && m.ProductId == product.Id)
             .ToListAsync(cancellationToken);
 
-        return ToResponse(product, productMovements, isOwner);
+        PricingView pricing = await PricingViewAsync(access, cancellationToken);
+        var importedMovementIds = await _importedCosts.LiveImportedMovementIdsAsync(
+            access.OrganizationId, cancellationToken);
+
+        return BuildResponse(product, productMovements, _stockService, pricing, importedMovementIds);
     }
 
     // Inactive products are still found here: old sales point at them.
@@ -269,7 +326,7 @@ public class ProductsController : ControllerBase
 
         await _db.SaveChangesAsync(cancellationToken);
 
-        return await ToResponseAsync(product, access.IsOwner, cancellationToken);
+        return await ToResponseAsync(product, access, cancellationToken);
     }
 
     // Retire a part. Never a delete: its sales and stock movements are what
@@ -317,7 +374,7 @@ public class ProductsController : ControllerBase
         product.IsActive = isActive;
         await _db.SaveChangesAsync(cancellationToken);
 
-        return await ToResponseAsync(product, access.IsOwner, cancellationToken);
+        return await ToResponseAsync(product, access, cancellationToken);
     }
 
     // What the quick-add form may ask for in this shop. Stock (quantity and
@@ -448,7 +505,7 @@ public class ProductsController : ControllerBase
             _db.Products.Add(product);
             await _db.SaveChangesAsync(cancellationToken);
 
-            return await ToResponseAsync(product, access.IsOwner, cancellationToken);
+            return await ToResponseAsync(product, access, cancellationToken);
         }
 
         // The part and its opening stock land together, or neither does.
@@ -480,7 +537,7 @@ public class ProductsController : ControllerBase
 
         await transaction.CommitAsync(cancellationToken);
 
-        return await ToResponseAsync(product, access.IsOwner, cancellationToken);
+        return await ToResponseAsync(product, access, cancellationToken);
     }
 
     // Parts needing a cost (decision D9). Owner only: it is about cost.

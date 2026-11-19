@@ -417,12 +417,22 @@ namespace Salio.Infrastructure.Migrations
                         .HasColumnType("character varying(20)")
                         .HasDefaultValue("Sales");
 
+                    b.Property<bool>("CashierSeesCost")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(false);
+
                     b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
 
                     b.Property<string>("Currency")
                         .IsRequired()
                         .HasColumnType("text");
+
+                    b.Property<int>("MinMarginPercent")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(15);
 
                     b.Property<string>("Name")
                         .IsRequired()
@@ -519,6 +529,9 @@ namespace Salio.Infrastructure.Migrations
                     b.Property<bool>("IsActive")
                         .HasColumnType("boolean");
 
+                    b.Property<long?>("MinPriceMinor")
+                        .HasColumnType("bigint");
+
                     b.Property<string>("Name")
                         .IsRequired()
                         .HasMaxLength(200)
@@ -552,6 +565,9 @@ namespace Salio.Infrastructure.Migrations
                         .HasColumnType("uuid");
 
                     b.Property<Guid?>("AppUserId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid?>("ClientRequestId")
                         .HasColumnType("uuid");
 
                     b.Property<Guid?>("CustomerId")
@@ -601,6 +617,10 @@ namespace Salio.Infrastructure.Migrations
 
                     b.HasIndex("CustomerId");
 
+                    b.HasIndex("OrganizationId", "ClientRequestId")
+                        .IsUnique()
+                        .HasFilter("\"ClientRequestId\" IS NOT NULL");
+
                     b.HasIndex("OrganizationId", "SaleDate");
 
                     b.HasIndex("OrganizationId", "SaleNumber")
@@ -615,6 +635,9 @@ namespace Salio.Infrastructure.Migrations
                         .HasColumnType("uuid");
 
                     b.Property<long>("LineTotalMinor")
+                        .HasColumnType("bigint");
+
+                    b.Property<long?>("ListPriceMinor")
                         .HasColumnType("bigint");
 
                     b.Property<Guid>("OrganizationId")

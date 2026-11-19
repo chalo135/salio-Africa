@@ -484,3 +484,6 @@ $RECYCLE.BIN/
 .Build_Log.md
 # Uploaded supplier invoices (D10). Never in the repository.
 App_Data/
+
+# Markdown files (notes, reports, runbooks) stay out of git.
+*.md

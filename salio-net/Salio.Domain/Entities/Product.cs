@@ -7,6 +7,10 @@ namespace Salio.Domain.Entities
         public string Sku { get; set; } = string.Empty;
         public string Name { get; set; } = string.Empty;
         public long SellPriceMinor { get; set; }
+
+        // The owner's own lowest price for this part, when set. Overrides
+        // the stop price worked out from cost (PricingRules.StopPrice).
+        public long? MinPriceMinor { get; set; }
         public bool IsActive { get; set; } = true;
 
         // Where the item physically sits, so it can be found without asking

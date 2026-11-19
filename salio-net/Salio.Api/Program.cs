@@ -26,6 +26,14 @@ if (args.Length > 0 && args[0] == SetupCodeCommand.Name)
     return;
 }
 
+// "repair-imported-costs" reverses one shop's imported opening stock, dry run
+// unless --commit. The web server is never started for it either.
+if (args.Length > 0 && args[0] == RepairImportedCostsCommand.Name)
+{
+    Environment.ExitCode = await RepairImportedCostsCommand.RunAsync(args);
+    return;
+}
+
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddDbContext<SalioDbContext>(options =>
@@ -50,6 +58,9 @@ builder.Services.AddScoped<StockReceiptWriter>();
 
 // Undo posts a mirror of an entry; it never edits or deletes one (D5).
 builder.Services.AddScoped<JournalReverser>();
+
+// Which stock a product import brought in. Reads only.
+builder.Services.AddScoped<ImportedCostFinder>();
 builder.Services.AddScoped<ProductImportService>();
 
 // Supplier invoices. The reader is chosen from configuration: with no

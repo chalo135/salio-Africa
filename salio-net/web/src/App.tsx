@@ -35,6 +35,8 @@ import { API, kes, findWayIn, devicePinOwner, itemWords, type SignedInUser, type
 import { allCartsEmpty, cartKey, clearCarts, loadCarts, saveCarts, type CartLine } from "./cartStorage";
 import { useAutoLock } from "./lock";
 import { apiFetch, problemText } from "./api";
+import CartPriceButtons from "./CartPriceButtons";
+import { belowLowest } from "./priceSteps";
 
 type Product = {
   id: string;
@@ -46,7 +48,14 @@ type Product = {
   // Below zero: more sold than Salio was told arrived.
   needsReceiving: boolean;
   // Null for a Cashier, and null while needsReceiving: cost is unknown then.
-  averageCostMinor: number | null;
+  // Left out entirely by the server when this person may not see it.
+  averageCostMinor?: number | null;
+  // The lowest price to agree to. Sent whoever is signed in; null when the
+  // cost is not known.
+  stopPriceMinor?: number | null;
+  // False when the cost came from an import or nobody ever stated one.
+  // Sent only with the cost.
+  costIsConfirmed?: boolean;
 };
 
 type View =
@@ -122,6 +131,29 @@ function belowCost(line: CartLine, products: Product[]) {
   return cost > 0 && line.unitPriceMinor < cost;
 }
 
+// The asking price is the part's own. A line whose part has left the list
+// keeps the price it was added at, with no stop.
+function askingOf(line: CartLine, products: Product[]) {
+  const product = products.find((p) => p.id === line.productId);
+  return product ? product.sellPriceMinor : line.unitPriceMinor;
+}
+
+function stopOf(line: CartLine, products: Product[]) {
+  const product = products.find((p) => p.id === line.productId);
+  return product?.stopPriceMinor ?? null;
+}
+
+// The buying price for the "you keep" line: only a confirmed one. A cost an
+// import carried in is not pricing guidance.
+function confirmedCostOf(line: CartLine, products: Product[]) {
+  const product = products.find((p) => p.id === line.productId);
+  return product?.costIsConfirmed ? product.averageCostMinor : undefined;
+}
+
+function lineBelowLowest(line: CartLine, products: Product[]) {
+  return belowLowest(askingOf(line, products), stopOf(line, products), line.unitPriceMinor);
+}
+
 // The product this line is for, if Salio shows none of it on the shelf.
 // The part is in the customer's hand, so the sale goes ahead: this only warns.
 function shelfShowsNone(line: CartLine, products: Product[]) {
@@ -167,7 +199,7 @@ function setPath(path: string) {
   }
 }
 
-export default // A one-off id for a checkout. crypto.randomUUID needs a secure context, so
+// A one-off id for a checkout. crypto.randomUUID needs a secure context, so
 // over plain http it is missing: Pay must still work, hence the fallback.
 function newCheckoutId(): string {
   try {
@@ -206,7 +238,7 @@ function newCheckoutId(): string {
   );
 }
 
-function App() {
+export default function App() {
   // Who is signed in, and which of their shops is open. Both come from the
   // server: the till no longer knows an organisation id of its own.
   const [user, setUser] = useState<SignedInUser | null>(null);
@@ -1540,7 +1572,13 @@ function App() {
             )}
             {lines.map((line, index) => (
               // motion-line-in plays once, when a line first appears.
-              <div key={index} className="motion-line-in flex items-center gap-2 border-b border-border px-2 py-1.5">
+              <div
+                key={index}
+                className={
+                  "motion-line-in flex flex-wrap items-center gap-2 border-b border-border px-2 py-1.5 " +
+                  (lineBelowLowest(line, products) ? "border-l-4 border-l-error" : "")
+                }
+              >
                 <span className="min-w-0 flex-1">
                   <span className="block truncate text-base">{line.name}</span>
                   {/* Selling under cost is allowed - the shop may have a reason.
@@ -1577,6 +1615,17 @@ function App() {
                 >
                   ×
                 </button>
+                {/* The price: tapped, never typed. Its own row under the line. */}
+                <div className="basis-full">
+                  <CartPriceButtons
+                    name={line.name}
+                    askingMinor={askingOf(line, products)}
+                    stopMinor={stopOf(line, products)}
+                    agreedMinor={line.unitPriceMinor}
+                    costMinor={confirmedCostOf(line, products)}
+                    onAgree={(priceMinor) => updateLine(index, { unitPriceMinor: priceMinor })}
+                  />
+                </div>
               </div>
             ))}
           </div>

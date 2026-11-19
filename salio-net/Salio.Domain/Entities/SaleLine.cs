@@ -15,6 +15,11 @@ namespace Salio.Domain.Entities
 
         public decimal Quantity { get; set; }
         public long UnitPriceMinor { get; set; }
+
+        // The part's asking price when it was sold, read from the part by
+        // the server. UnitPriceMinor above is what was actually charged.
+        // Null on lines sold before this was recorded.
+        public long? ListPriceMinor { get; set; }
         public long LineTotalMinor { get; set; }
 
         public char TaxBand { get; set; }

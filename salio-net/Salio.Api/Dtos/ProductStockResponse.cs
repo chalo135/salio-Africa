@@ -1,3 +1,5 @@
+using System.Text.Json.Serialization;
+
 namespace Salio.Api.Dtos;
 
 // One line of the shelf list: what it is, what it costs, where it sits,
@@ -31,10 +33,25 @@ public class ProductStockResponse
     // a sale (locked rule 16).
     public bool NeedsReceiving { get; set; }
 
+    // The lowest price this part should go for: the owner's own minimum, or
+    // cost plus the shop's margin (PricingRules.StopPrice). Null when the
+    // cost is not known. Sent whatever the caller may see of the cost.
+    public long? StopPriceMinor { get; set; }
+
+    // Whether CostVisibilityRules let this caller see the buying price. Lets
+    // the screen tell "hidden" apart from "not known yet".
+    public bool BuyingPriceShown { get; set; }
+
     // What one unit currently costs the shop, weighted across deliveries.
-    // Null for a Cashier: locked rule 13 keeps cost and stock value for the
-    // Owner, and average cost is what stock value is made of.
-    // Also null while NeedsReceiving is true: the cost is unknown until stock
-    // is received, so no figure is given (locked rule 16).
+    // Left out of the JSON entirely, not sent as null, when the caller may
+    // not see it (CostVisibilityRules). Also left out while NeedsReceiving is
+    // true: the cost is unknown until stock is received (locked rule 16).
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public long? AverageCostMinor { get; set; }
+
+    // False when the cost came from a product import, or no person ever
+    // stated one (CostProvenanceRules). Such a cost gives no stop price.
+    // Left out, like the cost itself, when the caller may not see the cost.
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public bool? CostIsConfirmed { get; set; }
 }
