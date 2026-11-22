@@ -30,6 +30,19 @@
   --color-primary-foreground-muted: #9fc4b2; /* quiet text on green */
   --color-primary-foreground-soft: #c3dace; /* second lines on green */
   --color-primary-soft: #e6eee9; /* green tint: the shelf chip, a pressed row */
+  --color-primary-outline: #4e8470; /* an outlined button on green: Lock */
+
+  /* The "what changed" card and a part that changed (design/Sell). */
+  --color-notice: #fef6e7; /* the card's fill */
+  --color-notice-border: #d9a62e; /* its outline */
+  --color-notice-line: #efe2c4; /* lines between its rows */
+  --color-notice-foreground: #6b4a12; /* second lines on the card: 7.6:1 */
+
+  /* The letters a search matched (design/FindSearch). */
+  --color-highlight: #fce9a8;
+
+  /* Lines between list rows (the drawings' rows). */
+  --color-row-line: #e8e4da;
 
   /* Amber says "look at this": low or no stock. Never used for errors. */
   --color-warning: #fbe9c8; /* a fill: badges */

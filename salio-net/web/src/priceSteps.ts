@@ -98,6 +98,46 @@ export function lowerInterval(steps: number[]): number {
   return niceStepAtMost(tenth) ?? STEPS_MINOR[0];
 }
 
+// The nice gap nearest to `amount / 20` (about 5% of it), ties going to
+// the larger. Compared as 20 * gap against amount, so nothing is divided.
+function nearestStepToFivePercent(amount: number): number {
+  let best = STEPS_MINOR[0];
+  let bestDiff = Math.abs(20 * best - amount);
+
+  for (const step of STEPS_MINOR) {
+    const diff = Math.abs(20 * step - amount);
+    if (diff <= bestDiff) {
+      best = step;
+      bestDiff = diff;
+    }
+  }
+
+  return best;
+}
+
+// The prices the cart's ladder offers, asking price first. At most 6, none
+// at or below zero.
+//
+//   a usable stop (below asking): asking down to the stop as priceSteps
+//     makes them, then two more below the stop at the last gap. Going under
+//     the stop is allowed; the ladder simply carries on.
+//   no usable stop: asking and three steps down, each a nice gap near 5%
+//     of asking.
+export function ladderSteps(askingMinor: number, stopMinor: number | null): number[] {
+  let steps: number[];
+
+  if (stopMinor !== null && stopMinor < askingMinor) {
+    const toStop = priceSteps(askingMinor, stopMinor);
+    const gap = lowerInterval(toStop);
+    steps = [...toStop, stopMinor - gap, stopMinor - 2 * gap];
+  } else {
+    const gap = nearestStepToFivePercent(askingMinor);
+    steps = [askingMinor, askingMinor - gap, askingMinor - 2 * gap, askingMinor - 3 * gap];
+  }
+
+  return steps.filter((price, index) => index === 0 || price > 0).slice(0, 6);
+}
+
 // True when the agreed price has gone under the lowest button: under the
 // stop, or under the asking price when there is no stop. The line turns red
 // and says so. It never stops the sale.

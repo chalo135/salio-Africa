@@ -36,4 +36,21 @@ public static class PricingRules
 
         return steps * RoundToMinor;
     }
+
+    // True when the cost plus the shop's margin is more than the asking
+    // price: the part earns less than the shop's own rule. Compared without
+    // dividing (cost * (100 + margin) against price * 100), so nothing is
+    // rounded. An unknown or zero cost is never under the rule.
+    //
+    // Battery 12V: cost 1,350, margin 15%, asking 1,500. 1,350 * 115 is
+    // 155,250, more than 150,000: under the rule.
+    public static bool MarginUnderRule(long sellPriceMinor, long? unitCostMinor, int minMarginPercent)
+    {
+        if (unitCostMinor is null || unitCostMinor <= 0)
+        {
+            return false;
+        }
+
+        return unitCostMinor.Value * (100 + minMarginPercent) > sellPriceMinor * 100;
+    }
 }

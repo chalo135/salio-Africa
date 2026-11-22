@@ -98,17 +98,33 @@ public static class RepairImportedCostsCommand
         var ct = CancellationToken.None;
 
         // ---- Which shop. Exactly one, or nothing happens. ----
+        // The name matches whatever its capitals: "jimkim2" finds "Jimkim2".
         string named = words[0].Trim();
+        string namedLower = named.ToLower();
         List<Organization> shops = Guid.TryParse(named, out Guid shopId)
             ? await db.Organizations.AsNoTracking().Where(o => o.Id == shopId).ToListAsync(ct)
-            : await db.Organizations.AsNoTracking().Where(o => o.Name == named).ToListAsync(ct);
+            : await db.Organizations.AsNoTracking().Where(o => o.Name.ToLower() == namedLower).ToListAsync(ct);
 
-        if (shops.Count != 1)
+        if (shops.Count == 0)
         {
-            Console.Error.WriteLine(shops.Count == 0
-                ? "No shop is called \"" + named + "\". Nothing was done."
-                : shops.Count + " shops are called \"" + named + "\". Name it by id instead: "
-                    + string.Join(", ", shops.Select(s => s.Id)) + ". Nothing was done.");
+            Console.Error.WriteLine("No shop is called \"" + named + "\". Nothing was done.");
+
+            // Say what does exist, so the next try is not a guess.
+            var existing = await db.Organizations.AsNoTracking().OrderBy(o => o.Name).ToListAsync(ct);
+            Console.Error.WriteLine(existing.Count == 0 ? "There are no shops." : "The shops are:");
+
+            foreach (var s in existing)
+            {
+                Console.Error.WriteLine("  " + s.Name + "  (" + s.Id + ")");
+            }
+
+            return 1;
+        }
+
+        if (shops.Count > 1)
+        {
+            Console.Error.WriteLine(shops.Count + " shops are called \"" + named + "\". Name it by id instead: "
+                + string.Join(", ", shops.Select(s => s.Id)) + ". Nothing was done.");
             return 1;
         }
 
@@ -221,7 +237,10 @@ public static class RepairImportedCostsCommand
         db.ChangeTracker.Clear();
         TrialBalanceReport after = await reports.GetTrialBalanceAsync(org, today, ct);
         PrintTrialBalance(before, null, accounts, "after", after);
-        Console.WriteLine("DONE: " + clean.Count + " part(s) reversed. Enter their real costs now.");
+        Console.WriteLine("DONE: " + clean.Count + " part(s) reversed.");
+        Console.WriteLine("Enter each one's real cost and the count on the shelf on the Opening stock screen,");
+        Console.WriteLine("dated " + today.ToString("yyyy-MM-dd") + " or later, before they are sold again.");
+        Console.WriteLine("Opening stock is allowed again for these parts only, once each.");
         return 0;
     }
 

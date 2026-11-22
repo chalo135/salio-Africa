@@ -271,7 +271,10 @@ public class SupplierInvoicesController : ControllerBase
             return OrganizationGuard.OwnerOnly();
         }
 
-        var outcome = await _invoices.CommitAsync(access.OrganizationId, id, request, cancellationToken);
+        // Who received it: new parts made here go into the price history.
+        Guid? userId = OrganizationGuard.TryGetUserId(User, out Guid signedIn) ? signedIn : null;
+
+        var outcome = await _invoices.CommitAsync(access.OrganizationId, id, request, userId, cancellationToken);
 
         return Answer(outcome);
     }

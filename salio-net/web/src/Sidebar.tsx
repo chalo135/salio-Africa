@@ -60,7 +60,7 @@ export default function Sidebar({
         <p className="truncate text-sm">{userName}</p>
       </div>
 
-      {/* Sell, Today, Owed: side by side, the biggest things to tap. */}
+      {/* Inventory, Sell, Owed: side by side, the biggest things to tap. */}
       <div className="flex shrink-0 gap-1.5 p-1.5">
         {menu.top.map((entry) => {
           const isActive = entry.place === active;
@@ -71,7 +71,8 @@ export default function Sidebar({
               onClick={() => onChoose(entry.place)}
               aria-current={isActive ? "page" : undefined}
               className={
-                "flex h-14 min-w-0 flex-1 flex-col items-center justify-center rounded-xl text-base font-bold leading-tight " +
+                // text-sm and no wrap: "Inventory" must fit a third of 240px.
+                "flex h-14 min-w-0 flex-1 flex-col items-center justify-center whitespace-nowrap rounded-xl text-sm font-bold leading-tight " +
                 (isActive
                   ? "bg-primary-foreground text-primary"
                   : "bg-primary-fill text-primary-foreground active:bg-primary-foreground/25")
@@ -83,6 +84,31 @@ export default function Sidebar({
           );
         })}
       </div>
+
+      {/* Today: first after the top, as it is first on the phone's More. */}
+      <ul className="shrink-0">
+        {menu.firstInMore.map((entry) => {
+          const isActive = entry.place === active;
+
+          return (
+            <li key={entry.place}>
+              <button
+                onClick={() => onChoose(entry.place)}
+                aria-current={isActive ? "page" : undefined}
+                className={
+                  "flex min-h-10 w-full items-center gap-2.5 border-l-4 pl-2 pr-2 text-left text-base " +
+                  (isActive
+                    ? "border-primary-soft bg-primary-foreground font-bold text-primary"
+                    : "border-transparent font-semibold text-primary-foreground active:bg-primary-foreground/15")
+                }
+              >
+                <NavIcon place={entry.place} size={22} />
+                <span className="min-w-0 flex-1 py-1 leading-tight">{entry.label}</span>
+              </button>
+            </li>
+          );
+        })}
+      </ul>
 
       {/* The groups. This is the only part that can scroll, and only on a
           screen shorter than a tablet's: it is better than cutting rows off. */}

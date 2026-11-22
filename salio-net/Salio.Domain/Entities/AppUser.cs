@@ -39,6 +39,13 @@ namespace Salio.Domain.Entities
         // else (enforced once, in Security/PasswordChangeGate.cs).
         public bool MustChangePassword { get; set; }
 
+        // The latest successful sign-in, and the one before it. The one
+        // before is what "since you last looked" compares against: by the
+        // time the person sees anything, LastSignedInAt is already now.
+        // Both null until the person signs in after this was added.
+        public DateTimeOffset? LastSignedInAt { get; set; }
+        public DateTimeOffset? PreviousSignedInAt { get; set; }
+
         // True only for the Salio developer, who may open the admin area.
         // Only ever set by hand in psql. EF can never write it (see
         // AppUserConfiguration), and no endpoint may grant it.

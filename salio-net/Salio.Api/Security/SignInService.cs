@@ -132,6 +132,18 @@ public class SignInService
                 // this moment whatever happens in between.
                 IsPersistent = true
             });
+
+        // Remember this sign-in, keeping the one before it. One UPDATE:
+        // Postgres reads every right-hand side from the row as it was, so
+        // the previous value moves across before the new one lands.
+        DateTimeOffset now = DateTimeOffset.UtcNow;
+
+        await _db.AppUsers
+            .Where(u => u.Id == user.Id)
+            .ExecuteUpdateAsync(s => s
+                .SetProperty(u => u.PreviousSignedInAt, u => u.LastSignedInAt)
+                .SetProperty(u => u.LastSignedInAt, now),
+                http.RequestAborted);
     }
 
     // Reads salio_device ("{deviceId}.{secret}") and checks it. Null when the

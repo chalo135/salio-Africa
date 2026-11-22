@@ -20,6 +20,13 @@ export type Part = {
   // False when the cost came from an import or nobody ever stated one.
   // Sent only with the cost.
   costIsConfirmed?: boolean;
+  // What a person last paid for one (stock in, invoice, opening stock).
+  // Survives selling out; never an imported cost. Left out when hidden or
+  // never bought. Guidance only.
+  lastBoughtAtMinor?: number | null;
+  // The shop's margin rule in percent, sent only when this part's last
+  // bought price plus that margin is more than its asking price.
+  marginUnderRulePercent?: number;
 };
 
 // Shillings typed, cents sent. Rounded, so 10.505 cannot become a fraction

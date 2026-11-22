@@ -109,15 +109,23 @@ public class ProductsController : ControllerBase
             .FirstAsync(o => o.Id == access.OrganizationId, cancellationToken);
 
         // The guard only grants access through an active membership, so a
-        // caller who got this far is an active member. Whether they are a
-        // platform admin is not read here: that column may only be named in
-        // three files (PlatformAdminTests), and an admin is not a member of a
-        // client's shop. False is the answer that shows less.
+        // caller who got this far is an active member. Whether they are the
+        // platform admin is asked of PlatformAdminFilter.Allows, the one
+        // place that reads that column (PlatformAdminTests), so this file
+        // never names it.
+        AppUser? caller = null;
+
+        if (OrganizationGuard.TryGetUserId(User, out Guid userId))
+        {
+            caller = await _db.AppUsers.AsNoTracking()
+                .FirstOrDefaultAsync(u => u.Id == userId, cancellationToken);
+        }
+
         var context = new CostVisibilityContext(
             access.Role,
             organization.CashierSeesCost,
             IsActiveMember: access.IsAllowed,
-            PlatformAdmin: false);
+            PlatformAdmin: PlatformAdminFilter.Allows(caller));
 
         return new PricingView(
             CostVisibilityRules.CanSeeCost(context),
@@ -146,10 +154,13 @@ public class ProductsController : ControllerBase
             averageCostMinor = stockService.CalculateWeightedAverageCost(productMovements);
         }
 
-        // A cost an import carried in, or none a person ever stated, gives
-        // no stop: it goes down the same path as no cost at all.
         bool costIsConfirmed = CostProvenanceRules.CostIsConfirmed(productMovements, importedMovementIds);
-        long? costForPricing = costIsConfirmed ? averageCostMinor : null;
+
+        // Guidance (the stop, the margin note) rests on what a person last
+        // paid, not the weighted average: that survives selling out, and an
+        // imported cost never counts. None stated gives no stop, the same
+        // path as no cost at all. Nothing here is ever posted.
+        long? costForPricing = CostProvenanceRules.LastBoughtAtMinor(productMovements, importedMovementIds);
 
         return new ProductStockResponse
         {
@@ -173,7 +184,15 @@ public class ProductsController : ControllerBase
             AverageCostMinor = pricing.CanSeeCost ? averageCostMinor : null,
 
             // Sent with the cost, never without it.
-            CostIsConfirmed = pricing.CanSeeCost ? costIsConfirmed : null
+            CostIsConfirmed = pricing.CanSeeCost ? costIsConfirmed : null,
+            LastBoughtAtMinor = pricing.CanSeeCost ? costForPricing : null,
+
+            // Stated costs only: an imported cost is not the owner's.
+            MarginUnderRulePercent =
+                pricing.CanSeeCost
+                && PricingRules.MarginUnderRule(product.SellPriceMinor, costForPricing, pricing.MinMarginPercent)
+                    ? pricing.MinMarginPercent
+                    : null
         };
     }
 
@@ -257,6 +276,7 @@ public class ProductsController : ControllerBase
             IsActive = true
         };
         _db.Products.Add(product);
+        PriceChanges.Record(_db, product, null, CurrentUserId());
         await _db.SaveChangesAsync(cancellationToken);
         return CreatedAtAction(nameof(GetById), new { id = product.Id, organizationId = product.OrganizationId }, product);
     }
@@ -319,10 +339,14 @@ public class ProductsController : ControllerBase
 
         string? binLocation = request.BinLocation?.Trim();
 
+        long oldPrice = product.SellPriceMinor;
+
         product.Name = request.Name.Trim();
         product.Sku = sku;
         product.SellPriceMinor = request.SellPriceMinor ?? product.SellPriceMinor;
         product.BinLocation = string.IsNullOrEmpty(binLocation) ? null : binLocation;
+
+        PriceChanges.Record(_db, product, oldPrice, CurrentUserId());
 
         await _db.SaveChangesAsync(cancellationToken);
 
@@ -503,6 +527,7 @@ public class ProductsController : ControllerBase
         if (quantity == 0)
         {
             _db.Products.Add(product);
+            PriceChanges.Record(_db, product, null, CurrentUserId());
             await _db.SaveChangesAsync(cancellationToken);
 
             return await ToResponseAsync(product, access, cancellationToken);
@@ -512,6 +537,7 @@ public class ProductsController : ControllerBase
         using var transaction = await _db.Database.BeginTransactionAsync(cancellationToken);
 
         _db.Products.Add(product);
+        PriceChanges.Record(_db, product, null, CurrentUserId());
         await _db.SaveChangesAsync(cancellationToken);
 
         var lines = new List<StockLineInput>
@@ -645,6 +671,13 @@ public class ProductsController : ControllerBase
         }
 
         return response;
+    }
+
+    // Who is making a change, for the price history. Behind [Authorize] the
+    // cookie always carries one; null only if it somehow does not.
+    private Guid? CurrentUserId()
+    {
+        return OrganizationGuard.TryGetUserId(User, out Guid userId) ? userId : null;
     }
 
     private static ProblemDetails NotAdded(string detail) => new()

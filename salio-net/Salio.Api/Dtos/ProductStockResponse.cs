@@ -54,4 +54,19 @@ public class ProductStockResponse
     // Left out, like the cost itself, when the caller may not see the cost.
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public bool? CostIsConfirmed { get; set; }
+
+    // What a person last paid for one, on the newest stock in, supplier
+    // invoice or opening stock (CostProvenanceRules.LastBoughtAtMinor).
+    // Survives selling out. Guidance only, never posted. Left out, like the
+    // cost, when the caller may not see the cost, and when there is none.
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public long? LastBoughtAtMinor { get; set; }
+
+    // The shop's margin rule, in percent, when this part's last bought price
+    // plus that margin is more than its asking price
+    // (PricingRules.MarginUnderRule). For the Inventory screen's note, never
+    // the till's. Left out otherwise, and always when the caller may not
+    // see the cost.
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public int? MarginUnderRulePercent { get; set; }
 }

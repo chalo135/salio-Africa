@@ -359,7 +359,7 @@ export default function OpeningStockScreen({
               onClick={onOpenParts}
               className="mt-2 h-12 w-full rounded-lg bg-primary text-lg font-bold text-primary-foreground"
             >
-              Open {words.Plural}
+              Open Inventory
             </button>
           </div>
         )}

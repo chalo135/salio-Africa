@@ -31,17 +31,20 @@ public class OpeningStockWriter
     private readonly StockReceiptService _receiptService;
     private readonly JournalPoster _journalPoster;
     private readonly StockPoster _stockPoster;
+    private readonly ImportedCostFinder _importedCosts;
 
     public OpeningStockWriter(
         SalioDbContext db,
         StockReceiptService receiptService,
         JournalPoster journalPoster,
-        StockPoster stockPoster)
+        StockPoster stockPoster,
+        ImportedCostFinder importedCosts)
     {
         _db = db;
         _receiptService = receiptService;
         _journalPoster = journalPoster;
         _stockPoster = stockPoster;
+        _importedCosts = importedCosts;
     }
 
     // sourceId: the journal entry's SourceId. Null means a fresh id, as the
@@ -69,13 +72,31 @@ public class OpeningStockWriter
         // which credits cash or a payable, never Owner's Equity.
         if (await ShopHasSoldAsync(organizationId, cancellationToken))
         {
-            return new OpeningStockResult
+            // The one exception (OpeningStockReentryRules): parts whose
+            // imported opening stock was reversed may have it entered again,
+            // once, at the real cost. Every part on the list must qualify.
+            var reentryDates = await _importedCosts.ReentryDatesAsync(organizationId, cancellationToken);
+            var productIds = lines.Select(l => l.ProductId).ToList();
+            var decision = OpeningStockReentryRules.Decide(productIds, reentryDates, openingDate);
+
+            if (decision == OpeningStockReentryDecision.TooEarly)
             {
-                ShopHasTraded = true,
-                Error = "This shop has already made a sale, so opening stock can no longer be entered. "
-                    + "Opening stock is what was on the shelves before the first sale. "
-                    + "To add goods that arrive now, use Receive stock."
-            };
+                DateOnly earliest = OpeningStockReentryRules.EarliestDate(productIds, reentryDates);
+
+                return Failed("Date this opening stock "
+                    + earliest.ToString("d MMMM yyyy") + " or later: that is when the imported stock was taken out.");
+            }
+
+            if (decision != OpeningStockReentryDecision.Allowed)
+            {
+                return new OpeningStockResult
+                {
+                    ShopHasTraded = true,
+                    Error = "This shop has already made a sale, so opening stock can no longer be entered. "
+                        + "Opening stock is what was on the shelves before the first sale. "
+                        + "To add goods that arrive now, use Receive stock."
+                };
+            }
         }
 
         if (lines.Count == 0)

@@ -25,6 +25,9 @@ public class ImportedStock
 
     // True once that journal entry has a Reversal pointing at it.
     public bool Reversed { get; set; }
+
+    // The date of that Reversal. Null while not reversed.
+    public DateOnly? ReversedOn { get; set; }
 }
 
 // Finds the stock a product import wrote, using only what is already stored.
@@ -83,12 +86,12 @@ public class ImportedCostFinder
 
         var entryIds = entries.Select(e => e.Id).ToList();
 
-        var reversedEntryIds = await _db.JournalEntries.AsNoTracking()
+        var reversals = await _db.JournalEntries.AsNoTracking()
             .Where(e => e.OrganizationId == organizationId
                 && e.SourceType == SourceType.Reversal
                 && e.SourceId != null
                 && entryIds.Contains(e.SourceId.Value))
-            .Select(e => e.SourceId!.Value)
+            .Select(e => new { OriginalId = e.SourceId!.Value, e.EntryDate })
             .ToListAsync(cancellationToken);
 
         var result = new List<ImportedStock>();
@@ -107,6 +110,7 @@ public class ImportedCostFinder
             var entry = entries.FirstOrDefault(e =>
                 (e.SourceType == SourceType.StockAdjustment && e.SourceId == change.Id)
                 || (e.SourceType == SourceType.Purchase && e.SourceId == change.ImportBatchId));
+            var reversal = entry is null ? null : reversals.FirstOrDefault(r => r.OriginalId == entry.Id);
 
             result.Add(new ImportedStock
             {
@@ -116,8 +120,58 @@ public class ImportedCostFinder
                 StockBasis = change.StockBasis,
                 Movements = own,
                 JournalEntryId = entry?.Id,
-                Reversed = entry is not null && reversedEntryIds.Contains(entry.Id)
+                Reversed = reversal is not null,
+                ReversedOn = reversal?.EntryDate
             });
+        }
+
+        return result;
+    }
+
+    // The parts that may have their opening stock entered again after the
+    // shop's first sale (OpeningStockReentryRules), each with the date its
+    // imported stock was reversed. Active parts only: an import undo switches
+    // its parts off, and those stay off.
+    public async Task<Dictionary<Guid, DateOnly>> ReentryDatesAsync(
+        Guid organizationId, CancellationToken cancellationToken)
+    {
+        var reversedImports = (await FindAsync(organizationId, cancellationToken))
+            .Where(i => i.Reversed && i.ReversedOn is not null
+                && i.Movements.Count > 0
+                && i.Movements.All(m => m.Type == StockMovementType.Adjustment))
+            .ToList();
+
+        var result = new Dictionary<Guid, DateOnly>();
+
+        if (reversedImports.Count == 0)
+        {
+            return result;
+        }
+
+        var reversedMovementIds = reversedImports.SelectMany(i => i.Movements).Select(m => m.Id).ToHashSet();
+        var productIds = reversedImports.Select(i => i.ProductId).Distinct().ToList();
+
+        var activeIds = await _db.Products.AsNoTracking()
+            .Where(p => p.OrganizationId == organizationId && p.IsActive && productIds.Contains(p.Id))
+            .Select(p => p.Id)
+            .ToListAsync(cancellationToken);
+
+        var movements = await _db.StockMovements.AsNoTracking()
+            .Where(m => m.OrganizationId == organizationId && activeIds.Contains(m.ProductId))
+            .ToListAsync(cancellationToken);
+
+        foreach (Guid productId in activeIds)
+        {
+            var own = movements.Where(m => m.ProductId == productId).ToList();
+
+            if (!OpeningStockReentryRules.MayReenter(own, reversedMovementIds))
+            {
+                continue;
+            }
+
+            result[productId] = reversedImports
+                .Where(i => i.ProductId == productId)
+                .Max(i => i.ReversedOn!.Value);
         }
 
         return result;

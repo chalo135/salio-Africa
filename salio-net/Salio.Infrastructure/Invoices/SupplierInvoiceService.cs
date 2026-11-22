@@ -185,7 +185,8 @@ public class SupplierInvoiceService
     // ONE stock receipt for the ticked lines, after creating any new parts,
     // all in one transaction: every part and the receipt land, or nothing does.
     public async Task<InvoiceOutcome<CommitSupplierInvoiceResult>> CommitAsync(
-        Guid organizationId, Guid invoiceId, CommitSupplierInvoiceRequest request, CancellationToken cancellationToken)
+        Guid organizationId, Guid invoiceId, CommitSupplierInvoiceRequest request, Guid? userId,
+        CancellationToken cancellationToken)
     {
         var invoice = await _db.SupplierInvoices
             .FirstOrDefaultAsync(i => i.Id == invoiceId && i.OrganizationId == organizationId, cancellationToken);
@@ -342,6 +343,7 @@ public class SupplierInvoiceService
             };
 
             _db.Products.Add(product);
+            PriceChanges.Record(_db, product, null, userId);
 
             // Saved one at a time so the next SKU check sees this one.
             await _db.SaveChangesAsync(cancellationToken);

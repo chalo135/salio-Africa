@@ -54,6 +54,46 @@ public static class CostProvenanceRules
         return hasStatedCost;
     }
 
+    // "Last bought at": the unit cost on the newest movement where a person
+    // stated what they paid (a stock receipt, a supplier invoice, opening
+    // stock, quick-add with a cost). Nothing an import carried in counts.
+    // Null when there is none.
+    //
+    // It does not depend on quantity on hand, so it survives selling out.
+    // Guidance only (stop price, "you keep", the margin note): it is never
+    // used to post anything. Cost of sales and stock value stay on the
+    // weighted average in StockService.
+    //
+    // Unlike CostIsConfirmed, an imported cost elsewhere in the history does
+    // not cancel it: a real purchase is a real number whatever else is on
+    // the shelf. When two share a time, the later one in the list wins.
+    public static long? LastBoughtAtMinor(
+        IEnumerable<StockMovement> movements,
+        IReadOnlySet<Guid> liveImportedMovementIds)
+    {
+        StockMovement? newest = null;
+
+        foreach (var movement in movements)
+        {
+            if (movement.QuantityChange <= 0 || movement.UnitCostMinor <= 0)
+            {
+                continue;
+            }
+
+            if (liveImportedMovementIds.Contains(movement.Id) || !IsStatedCost(movement))
+            {
+                continue;
+            }
+
+            if (newest is null || movement.OccurredAt >= newest.OccurredAt)
+            {
+                newest = movement;
+            }
+        }
+
+        return newest?.UnitCostMinor;
+    }
+
     private static bool IsStatedCost(StockMovement movement)
     {
         if (movement.Type == StockMovementType.Receipt)

@@ -31,12 +31,12 @@ import Receipt, { type ReceiptLine, type ReceiptPayment } from "./Receipt";
 import SalioLoader from "./SalioLoader";
 import useShowLoader from "./useShowLoader";
 import { isGatewayDown, isReachable, onReachableChange } from "./api";
-import { API, kes, findWayIn, devicePinOwner, itemWords, type SignedInUser, type WayIn } from "./auth";
+import { API, kes, qty, findWayIn, devicePinOwner, itemWords, type SignedInUser, type WayIn } from "./auth";
 import { allCartsEmpty, cartKey, clearCarts, loadCarts, saveCarts, type CartLine } from "./cartStorage";
 import { useAutoLock } from "./lock";
 import { apiFetch, problemText } from "./api";
-import CartPriceButtons from "./CartPriceButtons";
-import { belowLowest } from "./priceSteps";
+import CartLineRow from "./CartLineRow";
+import WelcomeCard from "./WelcomeCard";
 
 type Product = {
   id: string;
@@ -56,6 +56,13 @@ type Product = {
   // False when the cost came from an import or nobody ever stated one.
   // Sent only with the cost.
   costIsConfirmed?: boolean;
+  // Whether CostVisibilityRules let this person see the buying price.
+  buyingPriceShown?: boolean;
+  // What a person last paid for one: survives selling out, never an
+  // imported cost. Guidance only. Left out when hidden or never bought.
+  lastBoughtAtMinor?: number | null;
+  // The shop's own grouping, from an import or by hand: the Sell chips.
+  category?: string | null;
 };
 
 type View =
@@ -78,6 +85,7 @@ type View =
 
 // The screen each tab at the bottom opens.
 const TAB_VIEWS: Record<Tab, View> = {
+  parts: "parts",
   sell: "till",
   today: "sales",
   owed: "owed",
@@ -119,18 +127,6 @@ function useIsWide() {
   return useSyncExternalStore(watchWidth, () => window.matchMedia(WIDE).matches);
 }
 
-// What one unit of this line costs the shop today, or 0 if nothing is known
-// yet - a part that has never been received has no cost to compare against.
-function costOf(line: CartLine, products: Product[]) {
-  const product = products.find((p) => p.id === line.productId);
-  return product ? product.averageCostMinor ?? 0 : 0;
-}
-
-function belowCost(line: CartLine, products: Product[]) {
-  const cost = costOf(line, products);
-  return cost > 0 && line.unitPriceMinor < cost;
-}
-
 // The asking price is the part's own. A line whose part has left the list
 // keeps the price it was added at, with no stop.
 function askingOf(line: CartLine, products: Product[]) {
@@ -138,20 +134,76 @@ function askingOf(line: CartLine, products: Product[]) {
   return product ? product.sellPriceMinor : line.unitPriceMinor;
 }
 
+// A stop at or above the asking price is no stop at the counter: the margin
+// rule is too blunt for that part, and that is the owner's to see, not the
+// seller's mid-sale.
 function stopOf(line: CartLine, products: Product[]) {
   const product = products.find((p) => p.id === line.productId);
-  return product?.stopPriceMinor ?? null;
+  const stop = product?.stopPriceMinor ?? null;
+  if (stop === null || stop >= askingOf(line, products)) {
+    return null;
+  }
+  return stop;
 }
 
-// The buying price for the "you keep" line: only a confirmed one. A cost an
-// import carried in is not pricing guidance.
-function confirmedCostOf(line: CartLine, products: Product[]) {
+// The buying price for the "you keep" line: what a person last paid. It
+// survives selling out; a cost an import carried in is never it.
+function lastBoughtOf(line: CartLine, products: Product[]) {
   const product = products.find((p) => p.id === line.productId);
-  return product?.costIsConfirmed ? product.averageCostMinor : undefined;
+  return product?.lastBoughtAtMinor ?? undefined;
 }
 
-function lineBelowLowest(line: CartLine, products: Product[]) {
-  return belowLowest(askingOf(line, products), stopOf(line, products), line.unitPriceMinor);
+// The part name with what the search matched marked, as in the drawing.
+// Plain text when nothing is typed or the match is elsewhere (the SKU).
+function markMatch(name: string, search: string) {
+  const q = search.trim().toLowerCase();
+  const at = q === "" ? -1 : name.toLowerCase().indexOf(q);
+  if (at < 0) {
+    return name;
+  }
+  return (
+    <>
+      {name.slice(0, at)}
+      <mark className="rounded-sm bg-highlight px-0.5 text-foreground">{name.slice(at, at + q.length)}</mark>
+      {name.slice(at + q.length)}
+    </>
+  );
+}
+
+// The top of Sell on a phone, as drawn: "Hello, Charles", the shop and the
+// role beneath, and Lock. A tablet's sidebar says all three, so not there.
+function SellHeader({
+  firstName,
+  shopName,
+  isOwner,
+  onLock,
+}: {
+  firstName: string;
+  shopName: string;
+  isOwner: boolean;
+  onLock: () => void;
+}) {
+  return (
+    <div className="flex shrink-0 items-center gap-3 bg-primary px-4 pb-[13px] pt-[14px] md:hidden">
+      <span className="min-w-0 flex-1">
+        <span className="block truncate text-[18px] font-bold leading-6 tracking-[-0.01em] text-primary-foreground">
+          {firstName !== "" ? `Hello, ${firstName}` : shopName}
+        </span>
+        <span className="mt-0.5 block truncate text-[12px] leading-4 text-primary-foreground-muted">
+          {firstName !== "" ? `${shopName} · ` : ""}
+          {isOwner ? "owner" : "cashier"}
+        </span>
+      </span>
+      <button
+        type="button"
+        onClick={onLock}
+        className="h-11 shrink-0 rounded-[9px] border-[1.5px] border-primary-outline px-3 text-[13px] font-bold
+          text-primary-foreground active:bg-primary-fill"
+      >
+        Lock
+      </button>
+    </div>
+  );
 }
 
 // The product this line is for, if Salio shows none of it on the shelf.
@@ -277,6 +329,13 @@ export default function App() {
   // "Add". Nothing sets it true now; Parts still takes it.
   const [addFirstPart, setAddFirstPart] = useState(false);
 
+  // Inventory opened from the welcome card: on the changed parts only, or
+  // straight on one part's form (Fix). Null: Inventory as usual.
+  const [inventoryFocus, setInventoryFocus] = useState<{
+    onlyIds: string[] | null;
+    openPartId: string | null;
+  } | null>(null);
+
   // True while the quick-add form is open from "Add a part" (the empty
   // shelf, or "+ Add parts"): the part goes onto the shelf, not into a cart.
   const [addingToShelf, setAddingToShelf] = useState(false);
@@ -289,6 +348,9 @@ export default function App() {
   // unasked, or after any failure, the reader is treated as not there.
   const [reader, setReader] = useState<{ askedFor: string; real: boolean } | null>(null);
   const [search, setSearch] = useState("");
+
+  // The Sell screen's category chip, or null for All.
+  const [category, setCategory] = useState<string | null>(null);
 
   // One cart per customer at the counter, and which one is on screen.
   const [carts, setCarts] = useState<CartLine[][]>([[]]);
@@ -744,8 +806,22 @@ export default function App() {
     onLock: lockNow,
   });
 
+  // The shop's categories, for the chips under the search. None set on any
+  // part: no chips at all.
+  const categories = [...new Set(products.map((p) => p.category?.trim() ?? "").filter((c) => c !== ""))].sort(
+    (a, b) => a.localeCompare(b),
+  );
+
+  // A chosen chip narrows the list until a search is typed: a search always
+  // looks at everything, as in the drawings (the chips are not shown then).
+  const chosenCategory = category !== null && categories.includes(category) ? category : null;
+  const searching = search.trim() !== "";
+
   const visible = products.filter((p) => {
     const q = search.toLowerCase();
+    if (!searching && chosenCategory !== null && (p.category?.trim() ?? "") !== chosenCategory) {
+      return false;
+    }
     return p.name.toLowerCase().includes(q) || p.sku.toLowerCase().includes(q);
   });
 
@@ -1079,6 +1155,9 @@ export default function App() {
   const shop = user.shops.find((s) => s.organizationId === shopId);
   const shopName = shop?.name ?? "";
 
+  // "Hello, Peter": the first word of the name, or nothing if none is stored.
+  const firstName = user.fullName.trim().split(/\s+/)[0] ?? "";
+
   // What this shop calls its things ("Parts", "Products"), set at setup.
   const words = itemWords(shop?.itemWord);
 
@@ -1105,6 +1184,7 @@ export default function App() {
   // A place chosen in the sidebar or on More.
   function choosePlace(chosen: NavPlace) {
     setAddFirstPart(false);
+    setInventoryFocus(null);
     setStockInPart(undefined);
     setChoosingHowToAdd(false);
     setView(PLACE_VIEWS[chosen]);
@@ -1300,17 +1380,17 @@ export default function App() {
     );
   } else if (current === "parts" && isOwner) {
     // A change reloads the till's shelf so it shows new names and prices
-    // straight away.
+    // straight away. Inventory is a bottom tab, so the tabs stay under it.
     place = "parts";
+    withTabs = true;
     screen = (
       <PartsScreen
+        key={inventoryFocus === null ? "all" : (inventoryFocus.openPartId ?? "changed")}
         shopId={shopId}
         words={words}
         startAdding={addFirstPart}
-        onBack={() => {
-          setAddFirstPart(false);
-          setView("more");
-        }}
+        onlyIds={inventoryFocus?.onlyIds ?? null}
+        openPartId={inventoryFocus?.openPartId ?? null}
         onChanged={() => {
           setAddFirstPart(false);
           loadProducts(shopId);
@@ -1367,6 +1447,8 @@ export default function App() {
 
   if (current === "sales") {
     activeTab = "today";
+  } else if (current === "parts" && isOwner) {
+    activeTab = "parts";
   } else if (current === "owed" && isOwner) {
     activeTab = "owed";
   } else if (current === "more") {
@@ -1377,9 +1459,11 @@ export default function App() {
     place = activeTab;
   }
 
-  // The four tab screens each fill the space above the tab bar. The screens
-  // without tabs were chosen above.
-  if (withTabs && activeTab === "owed") {
+  // The tab screens each fill the space above the tab bar. Inventory and
+  // the screens without tabs were chosen above.
+  if (withTabs && activeTab === "parts") {
+    // Already chosen above.
+  } else if (withTabs && activeTab === "owed") {
     screen = <OwedScreen shopId={shopId} onExpired={loginEnded} />;
   } else if (withTabs && activeTab === "today") {
     screen = <SalesScreen shopId={shopId} shopName={shopName} onExpired={loginEnded} />;
@@ -1401,11 +1485,7 @@ export default function App() {
       // lines, the normal screen shows instead, so it can be paid for.)
       screen = (
         <div className="flex h-full flex-col bg-background text-foreground">
-          <div className="shrink-0 border-b border-border bg-surface px-3 py-2 md:hidden">
-            <span className="block truncate text-sm font-semibold">
-              {shopName} · {user.fullName}
-            </span>
-          </div>
+          <SellHeader firstName={firstName} shopName={shopName} isOwner={isOwner} onLock={lockNow} />
 
           <main className="min-h-0 flex-1 overflow-y-auto px-4 py-6 md:px-8 md:py-10">
             <h1 className="text-2xl font-bold">Your shelf is empty</h1>
@@ -1434,72 +1514,123 @@ export default function App() {
       // the shelf on the left, the cart always in sight on the right.
       <div className="flex h-full flex-col bg-background text-foreground lg:flex-row">
         <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-        {/* Who is serving, in which shop. One line: the way out is under More.
-            A tablet's sidebar already says both, so not repeated there. */}
-        <div className="shrink-0 border-b border-border bg-surface px-3 py-2 md:hidden">
-          <span className="block truncate text-sm font-semibold">
-            {shopName} · {user.fullName}
-          </span>
-        </div>
+        {/* Who is serving, in which shop, and Lock (design/Sell). */}
+        <SellHeader firstName={firstName} shopName={shopName} isOwner={isOwner} onLock={lockNow} />
 
-        {/* Search: always at the top, never scrolls away. */}
-        <header className="shrink-0 border-b border-border bg-surface p-2">
-          <div className="flex gap-2">
-            <input
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder={`Search ${words.plural}`}
-              className="h-12 min-w-0 flex-1 rounded-lg border-2 border-border-strong bg-surface px-3 text-lg
-                placeholder:text-muted-foreground focus:border-primary focus:outline-none"
-            />
-            {/* An Owner chooses how; a Cashier has one way, so it opens. */}
-            <button
-              onClick={() => (isOwner ? setChoosingHowToAdd(true) : addOnePart())}
-              className="h-12 shrink-0 rounded-lg border-2 border-primary px-3 text-base font-bold text-primary
-                active:bg-primary-soft"
-            >
-              Add {words.plural}
-            </button>
-          </div>
-          {shelfLoaded && (
-            <p className="mt-1 px-1 text-sm text-muted-foreground">
-              {products.length.toLocaleString("en-KE")} {products.length === 1 ? words.singular : words.plural}
-            </p>
-          )}
-        </header>
-
-        {/* Results: the only part of the screen that scrolls. */}
+        {/* Results: the only part of the screen that scrolls. The card is
+            inside the scroll, so it can never push the cart away; the search
+            sticks to the top once the card has scrolled past. */}
         <main className="min-h-0 flex-1 overflow-y-auto">
+          {/* What changed since the Owner last pressed Hide. Out of the way
+              while a search is typed. */}
+          {isOwner && !searching && (
+            <WelcomeCard
+              shopId={shopId}
+              onFix={(productId) => {
+                setInventoryFocus({ onlyIds: null, openPartId: productId });
+                setView("parts");
+              }}
+              onSeeAll={(productIds) => {
+                setInventoryFocus({ onlyIds: productIds, openPartId: null });
+                setView("parts");
+              }}
+            />
+          )}
+
+          {/* Search, then the category chips or, while searching, how many
+              matched (design/FindTap, design/FindSearch). */}
+          <header className="sticky top-0 z-10 bg-background">
+            <div className="flex gap-2 px-[14px] pb-[10px] pt-3">
+              <input
+                type="search"
+                aria-label={`Search ${words.plural}`}
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Search name or code"
+                className="h-[46px] min-w-0 flex-1 rounded-[11px] border-[1.5px] border-border-strong bg-surface px-[13px]
+                  text-base placeholder:text-muted-foreground focus:border-2 focus:border-primary focus:outline-none"
+              />
+              {/* An Owner chooses how; a Cashier has one way, so it opens. */}
+              <button
+                onClick={() => (isOwner ? setChoosingHowToAdd(true) : addOnePart())}
+                aria-label={`Add ${words.plural}`}
+                className="h-[46px] shrink-0 rounded-[11px] border-2 border-primary bg-surface px-[14px] text-[14px] font-bold
+                  text-primary active:bg-primary-soft"
+              >
+                Add
+              </button>
+            </div>
+
+            {!searching && categories.length > 0 && (
+              <div className="flex gap-[7px] overflow-x-auto px-[14px] pb-3">
+                <button
+                  type="button"
+                  onClick={() => setCategory(null)}
+                  aria-pressed={chosenCategory === null}
+                  className={
+                    "h-[38px] shrink-0 whitespace-nowrap rounded-full px-[14px] text-[14px] font-semibold " +
+                    (chosenCategory === null
+                      ? "border-2 border-primary bg-primary text-primary-foreground"
+                      : "border-[1.5px] border-border-strong bg-surface text-foreground")
+                  }
+                >
+                  All
+                </button>
+                {categories.map((c) => (
+                  <button
+                    key={c}
+                    type="button"
+                    onClick={() => setCategory(chosenCategory === c ? null : c)}
+                    aria-pressed={chosenCategory === c}
+                    className={
+                      "h-[38px] shrink-0 whitespace-nowrap rounded-full px-[14px] text-[14px] font-semibold " +
+                      (chosenCategory === c
+                        ? "border-2 border-primary bg-primary text-primary-foreground"
+                        : "border-[1.5px] border-border-strong bg-surface text-foreground")
+                    }
+                  >
+                    {c}
+                    {chosenCategory === c && <span className="font-money"> {visible.length}</span>}
+                  </button>
+                ))}
+              </div>
+            )}
+
+            {searching && visible.length > 0 && (
+              <p className="px-4 pb-[9px] text-[13px] text-muted-foreground">
+                {visible.length} {visible.length === 1 ? "match" : "matches"}
+              </p>
+            )}
+          </header>
+
+          {visible.length > 0 && <div className="border-t border-border" />}
           {visible.map((product) => (
             <button
               key={product.id}
               onClick={() => addToCart(product)}
-              className="flex min-h-14 w-full items-center justify-between gap-3 border-b
-                border-border bg-surface px-3 py-2 text-left active:bg-primary-soft"
+              className="flex w-full items-center gap-3 border-b border-row-line bg-surface px-4 py-[11px] text-left
+                active:bg-primary-soft"
             >
-              <span className="min-w-0">
-                <span className="block truncate text-base font-semibold">{product.name}</span>
-                <span className="mt-1 flex flex-wrap items-center gap-1.5 text-sm">
-                  <span className="rounded bg-primary-soft px-1.5 py-0.5 font-bold text-primary">
-                    {product.binLocation ?? "No shelf"}
-                  </span>
-                  <span className="text-muted-foreground">{product.sku}</span>
+              <span className="min-w-0 flex-1">
+                <span className="block truncate text-base font-bold leading-snug">
+                  {markMatch(product.name, search)}
+                </span>
+                <span className="mt-[3px] flex flex-wrap items-center gap-x-1 text-[12px] leading-4 text-muted-foreground">
+                  <span>{product.binLocation ? `Shelf ${product.binLocation}` : "No shelf"} ·</span>
                   {product.needsReceiving ? (
-                    <span className="rounded bg-warning px-1.5 py-0.5 font-bold text-warning-foreground">
+                    <span className="rounded-[5px] bg-warning px-[7px] py-0.5 text-[11px] font-bold text-warning-foreground">
                       Needs receiving
                     </span>
                   ) : product.quantityOnHand <= 0 ? (
-                    <span className="rounded bg-warning px-1.5 py-0.5 font-bold text-warning-foreground">
+                    <span className="rounded-[5px] bg-warning px-[7px] py-0.5 text-[11px] font-bold text-warning-foreground">
                       Out of stock
                     </span>
                   ) : (
-                    <span className="font-money font-semibold text-muted-foreground">
-                      {product.quantityOnHand} left
-                    </span>
+                    <span className="font-money">{qty(product.quantityOnHand)} in stock</span>
                   )}
                 </span>
               </span>
-              <span className="shrink-0 font-money text-lg font-bold">{kes(product.sellPriceMinor)}</span>
+              <span className="shrink-0 font-money text-[18px] font-bold">{kes(product.sellPriceMinor)}</span>
             </button>
           ))}
 
@@ -1572,61 +1703,31 @@ export default function App() {
             )}
             {lines.map((line, index) => (
               // motion-line-in plays once, when a line first appears.
-              <div
+              // Selling under cost or under the stop is allowed and is not
+              // announced: the line only says what was paid and what is kept.
+              <CartLineRow
                 key={index}
-                className={
-                  "motion-line-in flex flex-wrap items-center gap-2 border-b border-border px-2 py-1.5 " +
-                  (lineBelowLowest(line, products) ? "border-l-4 border-l-error" : "")
-                }
-              >
-                <span className="min-w-0 flex-1">
-                  <span className="block truncate text-base">{line.name}</span>
-                  {/* Selling under cost is allowed - the shop may have a reason.
-                      Say so and let it through: a till that refuses a sale gets
-                      worked around, and then there is no record of it at all. */}
-                  {belowCost(line, products) && (
-                    <span className="block text-sm font-semibold text-warning-strong">
-                      Below cost (KES {kes(costOf(line, products))})
-                    </span>
-                  )}
-                  {/* Locked rule 16: stock may go below zero. Warn now, never
-                      block - the Pay buttons stay as they are. */}
-                  {shelfShowsNone(line, products) && (
+                name={line.name}
+                quantity={line.quantity}
+                agreedMinor={line.unitPriceMinor}
+                askingMinor={askingOf(line, products)}
+                stopMinor={stopOf(line, products)}
+                costMinor={lastBoughtOf(line, products)}
+                canSeeCost={products.find((p) => p.id === line.productId)?.buyingPriceShown === true}
+                note={
+                  // Locked rule 16: stock may go below zero. Warn now, never
+                  // block - the Pay buttons stay as they are.
+                  shelfShowsNone(line, products) && (
                     <span className="block text-sm font-semibold text-warning-strong">
                       Needs receiving: {shelfShowsNone(line, products)?.quantityOnHand} in stock
                       {isOwner && ". Cost unknown"}
                     </span>
-                  )}
-                </span>
-                <input
-                  type="number"
-                  inputMode="numeric"
-                  value={line.quantity}
-                  onChange={(e) => updateLine(index, { quantity: parseInt(e.target.value) || 0 })}
-                  className="h-11 w-14 rounded-lg border-2 border-border-strong text-center font-money text-base"
-                />
-                <span className="w-20 shrink-0 text-right font-money text-base font-semibold">
-                  {kes(line.unitPriceMinor * line.quantity)}
-                </span>
-                <button
-                  onClick={() => removeLine(index)}
-                  className="h-11 w-11 shrink-0 rounded-lg border-2 border-border-strong text-xl font-bold"
-                  aria-label={"Remove " + line.name}
-                >
-                  ×
-                </button>
-                {/* The price: tapped, never typed. Its own row under the line. */}
-                <div className="basis-full">
-                  <CartPriceButtons
-                    name={line.name}
-                    askingMinor={askingOf(line, products)}
-                    stopMinor={stopOf(line, products)}
-                    agreedMinor={line.unitPriceMinor}
-                    costMinor={confirmedCostOf(line, products)}
-                    onAgree={(priceMinor) => updateLine(index, { unitPriceMinor: priceMinor })}
-                  />
-                </div>
-              </div>
+                  )
+                }
+                onQuantity={(quantity) => updateLine(index, { quantity })}
+                onPrice={(priceMinor) => updateLine(index, { unitPriceMinor: priceMinor })}
+                onRemove={() => removeLine(index)}
+              />
             ))}
           </div>
 
@@ -1763,7 +1864,7 @@ export default function App() {
         </div>
         {/* The install nudge: on Today, Owed and More only. Never on Sell,
             where it could sit over the cart or Pay, and never over a form. */}
-        {withTabs && place !== "sell" && (
+        {withTabs && place !== "sell" && place !== "parts" && (
           <InstallPill cartHasItems={carts.some((cart) => cart.length > 0)} />
         )}
         {withTabs && (
@@ -1772,7 +1873,12 @@ export default function App() {
               active={activeTab}
               top={menu.top}
               moreBadge={isOwner ? needingCostCount : 0}
-              onChoose={(tab) => setView(TAB_VIEWS[tab])}
+              onChoose={(tab) => {
+                // The Inventory tab is plain Inventory, not the welcome
+                // card's filtered list or a part's form.
+                setInventoryFocus(null);
+                setView(TAB_VIEWS[tab]);
+              }}
             />
           </div>
         )}

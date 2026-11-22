@@ -123,6 +123,9 @@ namespace Salio.Infrastructure.Migrations
                         .HasColumnType("boolean")
                         .HasDefaultValue(false);
 
+                    b.Property<DateTimeOffset?>("LastSignedInAt")
+                        .HasColumnType("timestamp with time zone");
+
                     b.Property<bool>("MustChangePassword")
                         .HasColumnType("boolean");
 
@@ -130,6 +133,9 @@ namespace Salio.Infrastructure.Migrations
                         .IsRequired()
                         .HasMaxLength(256)
                         .HasColumnType("character varying(256)");
+
+                    b.Property<DateTimeOffset?>("PreviousSignedInAt")
+                        .HasColumnType("timestamp with time zone");
 
                     b.Property<Guid>("SecurityStamp")
                         .HasColumnType("uuid");
@@ -382,6 +388,9 @@ namespace Salio.Infrastructure.Migrations
                     b.Property<Guid>("AppUserId")
                         .HasColumnType("uuid");
 
+                    b.Property<DateTimeOffset?>("ChangesSeenUntil")
+                        .HasColumnType("timestamp with time zone");
+
                     b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
 
@@ -491,6 +500,38 @@ namespace Salio.Infrastructure.Migrations
                     b.HasIndex("OrganizationId", "ReceivedAt");
 
                     b.ToTable("Payments");
+                });
+
+            modelBuilder.Entity("Salio.Domain.Entities.PriceChange", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset>("ChangedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("ChangedByUserId")
+                        .HasColumnType("uuid");
+
+                    b.Property<long>("NewPriceMinor")
+                        .HasColumnType("bigint");
+
+                    b.Property<long?>("OldPriceMinor")
+                        .HasColumnType("bigint");
+
+                    b.Property<Guid>("OrganizationId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("ProductId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ProductId");
+
+                    b.HasIndex("OrganizationId", "ChangedAt");
+
+                    b.ToTable("PriceChanges");
                 });
 
             modelBuilder.Entity("Salio.Domain.Entities.Product", b =>
@@ -1081,6 +1122,15 @@ namespace Salio.Infrastructure.Migrations
                     b.HasOne("Salio.Domain.Entities.Sale", null)
                         .WithMany()
                         .HasForeignKey("SaleId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Salio.Domain.Entities.PriceChange", b =>
+                {
+                    b.HasOne("Salio.Domain.Entities.Product", null)
+                        .WithMany()
+                        .HasForeignKey("ProductId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
                 });

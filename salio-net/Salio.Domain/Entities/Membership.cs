@@ -25,5 +25,12 @@ namespace Salio.Domain.Entities
         // that already exist without a default that would switch them all
         // off.
         public DateTimeOffset? DeactivatedAt { get; set; }
+
+        // The Owner's "what changed" card shows changes after this. Only the
+        // card's Hide moves it (WelcomeCardController); signing in and PIN
+        // unlocks never do. Per shop, so hiding one shop's card leaves
+        // another's alone. Null until the first Hide: the card then shows
+        // the last 7 days.
+        public DateTimeOffset? ChangesSeenUntil { get; set; }
     }
 }

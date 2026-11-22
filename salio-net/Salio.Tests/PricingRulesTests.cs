@@ -1,4 +1,4 @@
-using Salio.Domain.Services;
+﻿using Salio.Domain.Services;
 using Xunit;
 
 namespace Salio.Tests;
@@ -65,5 +65,27 @@ public class PricingRulesTests
         Assert.DoesNotContain("double", source);
         Assert.DoesNotContain("float", source);
         Assert.DoesNotContain("Math.", source);
+    }
+
+    [Fact]
+    public void The_battery_earns_under_a_15_percent_rule()
+    {
+        // Cost 1,350, asking 1,500: 11%, under 15%.
+        Assert.True(PricingRules.MarginUnderRule(150000, 135000, 15));
+    }
+
+    [Fact]
+    public void Exactly_the_margin_is_not_under_the_rule()
+    {
+        // Cost 1,000 at 15% is exactly 1,150.
+        Assert.False(PricingRules.MarginUnderRule(115000, 100000, 15));
+        Assert.True(PricingRules.MarginUnderRule(114999, 100000, 15));
+    }
+
+    [Fact]
+    public void An_unknown_cost_is_never_under_the_rule()
+    {
+        Assert.False(PricingRules.MarginUnderRule(150000, null, 15));
+        Assert.False(PricingRules.MarginUnderRule(150000, 0, 15));
     }
 }

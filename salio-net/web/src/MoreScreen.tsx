@@ -1,5 +1,5 @@
-// Everything that is not selling, today's sales or who owes what, in the
-// same three groups as the tablet sidebar: Shop, Books, Settings (menu.ts).
+// Today first, then everything that is not a bottom tab, in the same three
+// groups as the tablet sidebar: Shop, Books, Settings (menu.ts).
 // Then Lock and Sign out on their own below, well away from the rows people
 // tap every day.
 
@@ -36,6 +36,27 @@ export default function MoreScreen({
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto">
+        {/* Today first, on its own above the groups: it left the bottom
+            tabs, and is still opened every day. */}
+        <ul className="mt-4 border-y border-border bg-surface">
+          {menu.firstInMore.map((entry) => (
+            <li key={entry.place} className="border-t border-border first:border-t-0">
+              <button
+                onClick={() => onChoose(entry.place)}
+                className="flex min-h-16 w-full items-center gap-3 px-3 py-2 text-left active:bg-primary-soft"
+              >
+                <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg bg-primary-soft text-primary">
+                  <NavIcon place={entry.place} size={24} />
+                </span>
+                <span className="min-w-0 flex-1 text-base font-bold text-foreground">{entry.label}</span>
+                <span className="shrink-0 text-2xl text-muted-foreground" aria-hidden="true">
+                  ›
+                </span>
+              </button>
+            </li>
+          ))}
+        </ul>
+
         {menu.groups.map((group) => (
           <section key={group.key}>
             <h2 className="px-3 pb-1 pt-4 text-sm font-bold tracking-wide text-muted-foreground">

@@ -19,20 +19,21 @@ public record CostVisibilityContext(
 // and leaves the cost out of the response entirely when the answer is no.
 public static class CostVisibilityRules
 {
-    public static bool CanSeeCost(CostVisibilityContext context)
-    {
-        // 1. A platform admin supports the shop from outside it.
-        //    They are usually not a member at all, so this must come first.
-        if (context.PlatformAdmin) { return true; }
+   public static bool CanSeeCost(CostVisibilityContext context)
+{
+    // 1. Nobody outside the shop sees anything, ever. Deactivation has no
+    //    exceptions: to support a shop, add yourself to it, where it is
+    //    visible and leaves a trace.
+    if (!context.IsActiveMember) { return false; }
 
-        // 2. Everyone else must be a current member of this shop.
-        //    A removed owner still has the Owner role. They see nothing.
-        if (!context.IsActiveMember) { return false; }
+    // 2. A platform admin who is a member of this shop sees cost, whatever
+    //    role they hold here.
+    if (context.PlatformAdmin) { return true; }
 
-        // 3. The owner's own buying prices. Always theirs.
-        if (context.Role == MembershipRole.Owner) { return true; }
+    // 3. The owner's own buying prices. Always theirs.
+    if (context.Role == MembershipRole.Owner) { return true; }
 
-        // 4. Everyone else is staff. Only if this shop switched it on.
-        return context.OrganizationAllowsCashierCost;
-    }
+    // 4. Everyone else is staff. Only if this shop switched it on.
+    return context.OrganizationAllowsCashierCost;
+}
 }

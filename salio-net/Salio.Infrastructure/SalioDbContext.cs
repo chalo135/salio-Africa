@@ -32,6 +32,7 @@ public class SalioDbContext : DbContext
     public DbSet<ImportBatchChange> ImportBatchChanges => Set<ImportBatchChange>();
     public DbSet<SupplierInvoice> SupplierInvoices => Set<SupplierInvoice>();
     public DbSet<SupplierInvoiceLine> SupplierInvoiceLines => Set<SupplierInvoiceLine>();
+        public DbSet<PriceChange> PriceChanges => Set<PriceChange>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

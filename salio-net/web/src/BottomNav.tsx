@@ -4,7 +4,9 @@
 import NavIcon from "./NavIcons";
 import { type MenuEntry } from "./menu";
 
-export type Tab = "sell" | "today" | "owed" | "more";
+// "today" is no longer a tab (it is first on More) but stays a value: the
+// Today screen still shows the tab bar, with More lit, where it lives.
+export type Tab = "parts" | "sell" | "today" | "owed" | "more";
 
 export default function BottomNav({
   active,
@@ -13,9 +15,9 @@ export default function BottomNav({
   onChoose,
 }: {
   active: Tab;
-  // Sell, Today and (for an Owner) Owed, from menu.ts: the same three the
-  // tablet sidebar puts at its top. A Cashier gets no Owed tab, not one
-  // they can never open (locked rule 13).
+  // Inventory, Sell, Owed for an Owner, in that order, from menu.ts: the
+  // same ones the tablet sidebar puts at its top. A Cashier gets Sell only,
+  // not tabs they can never open (locked rule 13).
   top: MenuEntry[];
   // A number on More: the parts there that need a cost. Hidden at 0.
   moreBadge: number;
@@ -24,7 +26,7 @@ export default function BottomNav({
   const tabs: { tab: Tab; label: string }[] = [];
 
   for (const entry of top) {
-    if (entry.place === "sell" || entry.place === "today" || entry.place === "owed") {
+    if (entry.place === "parts" || entry.place === "sell" || entry.place === "owed") {
       tabs.push({ tab: entry.place, label: entry.label });
     }
   }
@@ -33,11 +35,12 @@ export default function BottomNav({
   tabs.push({ tab: "more", label: "More" });
 
   return (
-    // 64px of tabs, then 20px of nothing for the phone's own home bar.
-    <nav className="shrink-0 border-t border-border bg-surface pb-[max(1.25rem,env(safe-area-inset-bottom))]">
+    // As drawn (design/FindTap): white, a line above, 21px icons with a
+    // small word under each. Then room for the phone's own home bar.
+    <nav aria-label="Main" className="shrink-0 border-t border-border bg-surface px-1 pb-[max(0.875rem,env(safe-area-inset-bottom))] pt-[9px]">
       <div className="flex">
         {tabs.map((t) => {
-          const isActive = t.tab === active;
+          const isActive = t.tab === active || (t.tab === "more" && active === "today");
 
           return (
             <button
@@ -45,12 +48,12 @@ export default function BottomNav({
               onClick={() => onChoose(t.tab)}
               aria-current={isActive ? "page" : undefined}
               className={
-                "flex h-16 flex-1 flex-col items-center justify-center gap-0.5 text-base " +
+                "flex min-h-11 min-w-0 flex-1 flex-col items-center justify-center gap-[3px] whitespace-nowrap text-[12px] leading-4 " +
                 (isActive ? "font-bold text-primary" : "font-semibold text-muted-foreground")
               }
             >
               <span className="relative">
-                <NavIcon place={t.tab} size={26} />
+                <NavIcon place={t.tab} size={21} />
                 {t.tab === "more" && moreBadge > 0 && (
                   <span className="absolute -right-3 -top-1.5 min-w-5 rounded-full bg-warning px-1 text-center font-money text-xs font-bold leading-5 text-warning-foreground">
                     {moreBadge}

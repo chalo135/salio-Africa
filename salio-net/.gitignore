@@ -487,3 +487,8 @@ App_Data/
 
 # Markdown files (notes, reports, runbooks) stay out of git.
 *.md
+
+# The design drawings, and Claude's screenshots of the built screens.
+# Kept on this computer only.
+salio folder/
+claude/screens/

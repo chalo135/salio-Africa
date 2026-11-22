@@ -446,6 +446,7 @@ public class ProductImportService
                 };
 
                 _db.Products.Add(product);
+                PriceChanges.Record(_db, product, null, userId);
 
                 change.ProductId = product.Id;
                 change.ChangeType = ImportChangeType.Created;
@@ -472,6 +473,7 @@ public class ProductImportService
 
                 product.Name = row.Name;
                 product.SellPriceMinor = row.SellPriceMinor;
+                PriceChanges.Record(_db, product, previous.SellPriceMinor, userId);
 
                 if (row.HasCategory)
                 {
@@ -736,7 +738,9 @@ public class ProductImportService
 
                 if (change.ChangeType == ImportChangeType.Updated)
                 {
+                    long priceBeforeUndo = product.SellPriceMinor;
                     RestorePrevious(product, change.PreviousValuesJson);
+                    PriceChanges.Record(_db, product, priceBeforeUndo, userId);
                     result.UndoneUpdated++;
                     continue;
                 }

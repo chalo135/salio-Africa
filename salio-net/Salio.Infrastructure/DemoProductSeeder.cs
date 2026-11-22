@@ -74,6 +74,9 @@ namespace Salio.Infrastructure
                         IsActive = true
                     };
                     products.Add(product);
+
+                    // No person did this: the developer's demo shelf.
+                    PriceChanges.Record(db, product, null, null);
                 }
                 else if (productIdsWithMovements.Contains(product.Id))
                 {
