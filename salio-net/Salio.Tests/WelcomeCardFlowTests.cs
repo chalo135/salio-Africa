@@ -116,6 +116,38 @@ public class WelcomeCardFlowTests
     }
 
     [Fact]
+    public void Every_unseen_change_is_returned_not_only_five()
+    {
+        // The bell's sheet lists them all.
+        DateTimeOffset now = DateTimeOffset.UtcNow;
+        var products = new List<Product>();
+        var movements = new List<StockMovement>();
+
+        for (int i = 0; i < 7; i++)
+        {
+            var part = new Product { Id = Guid.NewGuid(), OrganizationId = Shop, Sku = "P" + i, Name = "Part " + i, SellPriceMinor = 150000 };
+            products.Add(part);
+            foreach (var (cost, daysAgo) in new[] { (80000L, 3), (100000L, 1) })
+            {
+                movements.Add(new StockMovement
+                {
+                    Id = Guid.NewGuid(), OrganizationId = Shop, ProductId = part.Id,
+                    Type = StockMovementType.Receipt, QuantityChange = 2, UnitCostMinor = cost,
+                    OccurredAt = now.AddDays(-daysAgo).AddMinutes(i), Note = "Stock receipt 9f8e7d6c"
+                });
+            }
+        }
+
+        WelcomeCardResponse? card = WelcomeCardController.BuildCard(
+            MembershipRole.Owner, OwnerId, WelcomeCardRules.CardSince(null, now),
+            products, movements, NoImports, new List<PriceChange>(), NoNames);
+
+        Assert.NotNull(card);
+        Assert.Equal(7, card.Total);
+        Assert.Equal(7, card.Rows.Count);
+    }
+
+    [Fact]
     public void Never_hidden_means_the_last_seven_days()
     {
         DateTimeOffset now = DateTimeOffset.UtcNow;

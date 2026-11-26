@@ -128,9 +128,11 @@ services:
       # Where uploaded supplier invoices are kept: the "invoices" volume
       # below. Without it invoice uploads answer 503.
       InvoiceStorage__Path: /var/lib/salio/invoices
-      # No real invoice reader exists yet. Leave both empty.
+      # Invoice reader: provider "anthropic" plus a key switches on Scan invoice.
+      # Empty key: no reader. Model is optional (empty means claude-haiku-5-5).
       InvoiceReader__Provider: ${INVOICE_READER_PROVIDER:-}
       InvoiceReader__ApiKey: ${INVOICE_READER_API_KEY:-}
+      InvoiceReader__Model: ${INVOICE_READER_MODEL:-}
       # Cors__AllowedOrigins is deliberately NOT set: Caddy serves the till
       # and /api on one address, so no other origin needs access.
       # Every SQL statement is logged at Information. Too much for a server.

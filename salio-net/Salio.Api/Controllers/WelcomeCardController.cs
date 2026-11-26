@@ -18,8 +18,6 @@ namespace Salio.Api.Controllers;
 [Route("api/welcome-card")]
 public class WelcomeCardController : ControllerBase
 {
-    private const int MaxRows = 5;
-
     private readonly SalioDbContext _db;
     private readonly OrganizationGuard _guard;
     private readonly ImportedCostFinder _importedCosts;
@@ -222,7 +220,8 @@ public class WelcomeCardController : ControllerBase
             Since = since,
             Total = rows.Count,
             ProductIds = rows.Select(r => r.ProductId).Distinct().ToList(),
-            Rows = rows.Take(MaxRows).ToList()
+            // Every unseen change, uncapped: the bell's sheet lists them all.
+            Rows = rows
         };
     }
 

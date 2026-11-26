@@ -8,13 +8,13 @@ public class WelcomeCardResponse
     // Changes after this are shown: "7 things changed since Tuesday".
     public DateTimeOffset Since { get; set; }
 
-    // Every row found, before the cap of 5.
+    // How many rows: the number on the bell.
     public int Total { get; set; }
 
     // Every part named in any row, for "See everything that changed".
     public List<Guid> ProductIds { get; set; } = new();
 
-    // The newest 5.
+    // Every unseen change, newest first. Not capped: the sheet shows all.
     public List<WelcomeCardRow> Rows { get; set; } = new();
 }
 

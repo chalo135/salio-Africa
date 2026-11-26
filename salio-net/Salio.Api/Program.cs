@@ -64,13 +64,27 @@ builder.Services.AddScoped<ImportedCostFinder>();
 builder.Services.AddScoped<ProductImportService>();
 
 // Supplier invoices. The reader is chosen from configuration: with no
-// InvoiceReader:ApiKey it is the demo reader and says so; with a key for a
-// provider nobody has built, it refuses (503). See ConfiguredInvoiceReader.
+// InvoiceReader:ApiKey it is the demo reader and says so; with Provider
+// "anthropic" and a key it is ClaudeInvoiceReader; with a key for a provider
+// nobody has built, it refuses (503). See ConfiguredInvoiceReader.
 //
+// The real reader's HttpClient comes from the factory: pooled connections,
+// and one timeout, long enough for a full page but not forever.
+builder.Services.AddHttpClient(ConfiguredInvoiceReader.HttpClientName, client =>
+{
+    client.Timeout = TimeSpan.FromSeconds(90);
+});
+
 // Registered twice on purpose, as one object per request: the upload asks
 // for "a reader" (IInvoiceReader), and GET reader-status asks the same
 // object whether a real one is configured.
-builder.Services.AddScoped<ConfiguredInvoiceReader>();
+builder.Services.AddScoped<ConfiguredInvoiceReader>(services =>
+{
+    var httpClients = services.GetRequiredService<IHttpClientFactory>();
+    return new ConfiguredInvoiceReader(
+        services.GetRequiredService<IConfiguration>(),
+        () => httpClients.CreateClient(ConfiguredInvoiceReader.HttpClientName));
+});
 builder.Services.AddScoped<IInvoiceReader>(services =>
     services.GetRequiredService<ConfiguredInvoiceReader>());
 builder.Services.AddScoped<SupplierInvoiceService>();
