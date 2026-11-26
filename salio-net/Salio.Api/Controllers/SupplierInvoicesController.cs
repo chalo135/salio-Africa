@@ -193,6 +193,13 @@ public class SupplierInvoicesController : ControllerBase
             System.IO.File.Delete(fullPath);
             return Problem503(ex.Message);
         }
+        catch (InvoiceReadFailedException ex)
+        {
+            // A real reader tried and could not: a blurred photo, a refused
+            // key, a busy service. The message is written for the owner.
+            System.IO.File.Delete(fullPath);
+            return Problem503(ex.Message);
+        }
         catch
         {
             System.IO.File.Delete(fullPath);

@@ -38,6 +38,13 @@
   --color-notice-line: #efe2c4; /* lines between its rows */
   --color-notice-foreground: #6b4a12; /* second lines on the card: 7.6:1 */
 
+  /* The bell's count, on green (design/NotifyFloat). Dark text: 8.6:1. */
+  --color-badge: #e8a317;
+
+  /* The round grey behind a ×, and the sheet's drag handle. */
+  --color-close: #f1eee6;
+  --color-handle: #d5d0c2;
+
   /* The letters a search matched (design/FindSearch). */
   --color-highlight: #fce9a8;
 

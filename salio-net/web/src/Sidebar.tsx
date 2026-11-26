@@ -12,11 +12,14 @@
 import { useState } from "react";
 import NavIcon, { type NavPlace } from "./NavIcons";
 import InstallButton from "./InstallButton";
+import { BellButton } from "./Changes";
 import { groupOf, type Menu, type MenuGroupKey } from "./menu";
 
 export default function Sidebar({
   shopName,
   userName,
+  changeCount,
+  onBell,
   menu,
   active,
   onChoose,
@@ -25,6 +28,9 @@ export default function Sidebar({
 }: {
   shopName: string;
   userName: string;
+  // Unseen changes for the bell, or null for no bell (anyone but an Owner).
+  changeCount: number | null;
+  onBell: () => void;
   // Already cut down to what this person may open (see menu.ts).
   menu: Menu;
   active: NavPlace;
@@ -54,10 +60,14 @@ export default function Sidebar({
     // 6.9:1. The active item turns white with green words, the same pair
     // the other way round, so it stands out without a new colour.
     <nav className="hidden w-60 shrink-0 flex-col bg-primary text-primary-foreground md:flex">
-      {/* Which shop, and who is signed in. */}
-      <div className="shrink-0 border-b border-primary-foreground/25 px-3 py-1">
-        <p className="truncate text-base font-bold">{shopName}</p>
-        <p className="truncate text-sm">{userName}</p>
+      {/* Which shop, and who is signed in. The bell sits to the right, as
+          on the phone's Sell header. */}
+      <div className="flex shrink-0 items-center gap-2 border-b border-primary-foreground/25 py-1 pl-3 pr-2">
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-base font-bold">{shopName}</p>
+          <p className="truncate text-sm">{userName}</p>
+        </div>
+        {changeCount !== null && <BellButton count={changeCount} onOpen={onBell} />}
       </div>
 
       {/* Inventory, Sell, Owed: side by side, the biggest things to tap. */}

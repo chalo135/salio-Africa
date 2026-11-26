@@ -36,7 +36,8 @@ import { allCartsEmpty, cartKey, clearCarts, loadCarts, saveCarts, type CartLine
 import { useAutoLock } from "./lock";
 import { apiFetch, problemText } from "./api";
 import CartLineRow from "./CartLineRow";
-import WelcomeCard from "./WelcomeCard";
+import { BellButton, FloatingChange, ChangesSheet } from "./Changes";
+import { useChanges, type ChangeRow } from "./useChanges";
 
 type Product = {
   id: string;
@@ -171,20 +172,26 @@ function markMatch(name: string, search: string) {
 }
 
 // The top of Sell on a phone, as drawn: "Hello, Charles", the shop and the
-// role beneath, and Lock. A tablet's sidebar says all three, so not there.
+// role beneath, the bell (Owner only), and Lock. A tablet's sidebar says
+// all of these, so not there.
 function SellHeader({
   firstName,
   shopName,
   isOwner,
+  changeCount,
+  onBell,
   onLock,
 }: {
   firstName: string;
   shopName: string;
   isOwner: boolean;
+  // Unseen changes, for the bell's number.
+  changeCount: number;
+  onBell: () => void;
   onLock: () => void;
 }) {
   return (
-    <div className="flex shrink-0 items-center gap-3 bg-primary px-4 pb-[13px] pt-[14px] md:hidden">
+    <div className="flex shrink-0 items-center gap-[10px] bg-primary pb-3 pl-4 pr-[14px] pt-[13px] md:hidden">
       <span className="min-w-0 flex-1">
         <span className="block truncate text-[18px] font-bold leading-6 tracking-[-0.01em] text-primary-foreground">
           {firstName !== "" ? `Hello, ${firstName}` : shopName}
@@ -194,10 +201,12 @@ function SellHeader({
           {isOwner ? "owner" : "cashier"}
         </span>
       </span>
+      {/* A Cashier has no bell at all. */}
+      {isOwner && <BellButton count={changeCount} onOpen={onBell} />}
       <button
         type="button"
         onClick={onLock}
-        className="h-11 shrink-0 rounded-[9px] border-[1.5px] border-primary-outline px-3 text-[13px] font-bold
+        className="h-11 shrink-0 rounded-[10px] border-[1.5px] border-primary-outline px-3 text-[13px] font-bold
           text-primary-foreground active:bg-primary-fill"
       >
         Lock
@@ -407,8 +416,13 @@ export default function App() {
   // on "Parts needing a cost". Owner only; 0 hides it.
   const [needingCostCount, setNeedingCostCount] = useState(0);
 
-  // The part Stock in opens with, when opened from "Parts needing a cost".
+  // The part Stock in opens with, when opened from "Parts needing a cost"
+  // or from a ran-out change in the bell's sheet.
   const [stockInPart, setStockInPart] = useState<Product | undefined>(undefined);
+
+  // Where Stock in's Back goes when it opened with a part: "Parts needing a
+  // cost", or Sell when it came from the bell's sheet.
+  const [stockInReturn, setStockInReturn] = useState<View>("needingCost");
 
   // The cart being served right now. Everything below reads this.
   const lines = carts[activeCart] ?? [];
@@ -1003,6 +1017,20 @@ export default function App() {
   // Start-up: asking the server whether this phone is still signed in.
   const showChecking = useShowLoader(checkingLogin);
 
+  // What changed since the Owner last marked it seen: the bell, the floating
+  // card and the sheet. Owner only (the server refuses anyone else). Asked
+  // again each time Sell comes on screen. Up here, before the early returns,
+  // because it is a hook.
+  const changes = useChanges({
+    shopId: shopId ?? "",
+    userId: user?.id ?? "",
+    enabled: shopId !== null && user?.shops.find((s) => s.organizationId === shopId)?.role === 0,
+    refreshWhen: view === "till",
+  });
+
+  // The sheet with every change: from the bell or See all.
+  const [changesOpen, setChangesOpen] = useState(false);
+
   if (checkingLogin) {
     return showChecking ? <SalioLoader size="inline" message="Opening Salio…" /> : null;
   }
@@ -1190,6 +1218,34 @@ export default function App() {
     setView(PLACE_VIEWS[chosen]);
   }
 
+  // Fix on a change: that part's form in Inventory.
+  function fixFromChanges(productId: string) {
+    setChangesOpen(false);
+    setInventoryFocus({ onlyIds: null, openPartId: productId });
+    setView("parts");
+  }
+
+  // Stock in on a ran-out change: Stock in with that part already on the
+  // delivery. Back returns to Sell. The shelf's copy carries the selling
+  // price; a part not on it (switched off since) starts from its name.
+  function stockInFromChanges(row: ChangeRow) {
+    setChangesOpen(false);
+    setStockInReturn("till");
+    setStockInPart(
+      products.find((p) => p.id === row.productId) ?? {
+        id: row.productId,
+        sku: "",
+        name: row.partName,
+        sellPriceMinor: 0,
+        binLocation: null,
+        quantityOnHand: 0,
+        needsReceiving: false,
+        averageCostMinor: null,
+      },
+    );
+    setView("stockIn");
+  }
+
   // "Add a part": the quick-add form with nothing typed in yet.
   function addOnePart() {
     setChoosingHowToAdd(false);
@@ -1279,7 +1335,7 @@ export default function App() {
         products={products}
         startWith={stockInPart}
         backLabel={stockInPart ? "Back" : "More"}
-        onBack={() => setView(stockInPart ? "needingCost" : "more")}
+        onBack={() => setView(stockInPart ? stockInReturn : "more")}
         onReceived={() => loadProducts(shopId)}
         onExpired={loginEnded}
       />
@@ -1296,6 +1352,7 @@ export default function App() {
         onChoose={(item) => {
           // The shelf's copy carries the selling price for Stock in's warning.
           // Inactive parts are not on the list (D9), so it is normally there.
+          setStockInReturn("needingCost");
           setStockInPart(
             products.find((p) => p.id === item.productId) ?? {
               id: item.productId,
@@ -1485,7 +1542,14 @@ export default function App() {
       // lines, the normal screen shows instead, so it can be paid for.)
       screen = (
         <div className="flex h-full flex-col bg-background text-foreground">
-          <SellHeader firstName={firstName} shopName={shopName} isOwner={isOwner} onLock={lockNow} />
+          <SellHeader
+            firstName={firstName}
+            shopName={shopName}
+            isOwner={isOwner}
+            changeCount={changes.count}
+            onBell={() => setChangesOpen(true)}
+            onLock={lockNow}
+          />
 
           <main className="min-h-0 flex-1 overflow-y-auto px-4 py-6 md:px-8 md:py-10">
             <h1 className="text-2xl font-bold">Your shelf is empty</h1>
@@ -1514,32 +1578,20 @@ export default function App() {
       // the shelf on the left, the cart always in sight on the right.
       <div className="flex h-full flex-col bg-background text-foreground lg:flex-row">
         <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-        {/* Who is serving, in which shop, and Lock (design/Sell). */}
-        <SellHeader firstName={firstName} shopName={shopName} isOwner={isOwner} onLock={lockNow} />
+        {/* Who is serving, in which shop, the bell and Lock (design/NotifyFloat). */}
+        <SellHeader
+          firstName={firstName}
+          shopName={shopName}
+          isOwner={isOwner}
+          changeCount={changes.count}
+          onBell={() => setChangesOpen(true)}
+          onLock={lockNow}
+        />
 
-        {/* Results: the only part of the screen that scrolls. The card is
-            inside the scroll, so it can never push the cart away; the search
-            sticks to the top once the card has scrolled past. */}
-        <main className="min-h-0 flex-1 overflow-y-auto">
-          {/* What changed since the Owner last pressed Hide. Out of the way
-              while a search is typed. */}
-          {isOwner && !searching && (
-            <WelcomeCard
-              shopId={shopId}
-              onFix={(productId) => {
-                setInventoryFocus({ onlyIds: null, openPartId: productId });
-                setView("parts");
-              }}
-              onSeeAll={(productIds) => {
-                setInventoryFocus({ onlyIds: productIds, openPartId: null });
-                setView("parts");
-              }}
-            />
-          )}
-
-          {/* Search, then the category chips or, while searching, how many
-              matched (design/FindTap, design/FindSearch). */}
-          <header className="sticky top-0 z-10 bg-background">
+        {/* Search, then the category chips or, while searching, how many
+            matched (design/FindTap, design/FindSearch). Never moved by the
+            changes: those float over the list below. */}
+        <header className="shrink-0 bg-background">
             <div className="flex gap-2 px-[14px] pb-[10px] pt-3">
               <input
                 type="search"
@@ -1601,8 +1653,14 @@ export default function App() {
                 {visible.length} {visible.length === 1 ? "match" : "matches"}
               </p>
             )}
-          </header>
+        </header>
 
+        {/* The list, and the one change floating over its top. The card is
+            inside this box, so it can never cover the search, the chips, the
+            cart or the tabs. A tap beside it reaches the list. */}
+        <div className="relative flex min-h-0 flex-1 flex-col">
+        {/* Results: the only part of the screen that scrolls. */}
+        <main className="min-h-0 flex-1 overflow-y-auto">
           {visible.length > 0 && <div className="border-t border-border" />}
           {visible.map((product) => (
             <button
@@ -1648,6 +1706,20 @@ export default function App() {
             </div>
           )}
         </main>
+
+        {/* What changed, floating (design/NotifyFloat). × tucks it away and
+            marks nothing; it floats again only for something newer. */}
+        {changes.card !== null && changes.floats && (
+          <div className="pointer-events-none absolute inset-x-3 top-0 z-10">
+            <FloatingChange
+              card={changes.card}
+              onTuck={changes.tuck}
+              onSeeAll={() => setChangesOpen(true)}
+              onFix={fixFromChanges}
+            />
+          </div>
+        )}
+        </div>
         </div>
 
         {/* Cart: pinned to the bottom, so the total is never scrolled off.
@@ -1846,6 +1918,8 @@ export default function App() {
       <Sidebar
         shopName={shopName}
         userName={user.fullName}
+        changeCount={isOwner ? changes.count : null}
+        onBell={() => setChangesOpen(true)}
         menu={menu}
         active={place}
         onChoose={choosePlace}
@@ -1883,6 +1957,21 @@ export default function App() {
           </div>
         )}
       </div>
+
+      {/* Every unseen change (design/NotifySheet): from the bell or See all.
+          Closing it marks nothing; only "Mark all as seen" does. */}
+      {isOwner && changesOpen && changes.card !== null && (
+        <ChangesSheet
+          card={changes.card}
+          onClose={() => setChangesOpen(false)}
+          onMarkAllSeen={() => {
+            changes.markAllSeen();
+            setChangesOpen(false);
+          }}
+          onFix={fixFromChanges}
+          onStockIn={stockInFromChanges}
+        />
+      )}
     </div>,
   );
 }
